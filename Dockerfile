@@ -5,6 +5,12 @@ RUN bun install --frozen-lockfile
 
 FROM oven/bun:1.3.14 AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_SITE_URL
+ARG NEXT_PUBLIC_SITE_NAME=RackRate
+ARG NEXT_PUBLIC_FLATKEY_COMPUTE_URL=https://console.flatkey.ai/compute/market
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+ENV NEXT_PUBLIC_SITE_NAME=${NEXT_PUBLIC_SITE_NAME}
+ENV NEXT_PUBLIC_FLATKEY_COMPUTE_URL=${NEXT_PUBLIC_FLATKEY_COMPUTE_URL}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bun run build
