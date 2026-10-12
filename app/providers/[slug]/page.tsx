@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getGpu, getOffersForProvider, getProvider, providers } from "@/lib/data";
-import { flatkeyComputeUrl } from "@/lib/site";
+import { getGpu, getOffersForProvider, getProvider, getRegionForOffer, providers } from "@/lib/data";
+import { absoluteUrl, flatkeyComputeUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
@@ -14,9 +14,13 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const provider = getProvider((await params).slug);
   if (!provider) return {};
+  const title = `${provider.name} GPU rental prices and cloud costs`;
+  const description = `Compare sample ${provider.name} GPU rental prices per hour, accelerators, regions, configurations, and purchase terms.`;
   return {
-    title: `${provider.name} GPU pricing`,
-    description: `Compare ${provider.name} GPU offers, regions, configurations, and hourly prices.`,
+    title,
+    description,
+    alternates: { canonical: absoluteUrl(`/providers/${provider.slug}`) },
+    openGraph: { title, description, url: absoluteUrl(`/providers/${provider.slug}`) },
   };
 }
 
@@ -31,13 +35,13 @@ export default async function ProviderPage({ params }: PageProps) {
   return (
     <main className="detail-main provider-detail">
       <section className="provider-hero shell">
-        <div className="breadcrumbs"><Link href="/">Home</Link><span>/</span><Link href="/#providers">Providers</Link><span>/</span><strong>{provider.name}</strong></div>
+        <div className="breadcrumbs"><Link href="/">Home</Link><span>/</span><Link href="/providers">Providers</Link><span>/</span><strong>{provider.name}</strong></div>
         <div className="provider-hero-grid">
           <div>
             <span className="eyebrow">{provider.type} · {provider.hq}</span>
             <h1>{provider.name}</h1>
             <p>{provider.summary}</p>
-            <a className="button button-primary" href={flatkeyComputeUrl(`provider_${provider.slug}`)} target="_blank" rel="noreferrer">Source via Flatkey <span>↗</span></a>
+            <a className="button button-primary hero-flatkey-cta" href={flatkeyComputeUrl(`provider_${provider.slug}_profile`, "provider_detail")} target="_blank" rel="sponsored nofollow noreferrer">Continue to Flatkey Compute <span>↗</span></a>
           </div>
           <div className="provider-scorecard">
             <div><span>Starting at</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>per GPU / hour</small></div>
@@ -49,21 +53,23 @@ export default async function ProviderPage({ params }: PageProps) {
       </section>
 
       <section className="detail-content shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Available catalogue</span><h2>Published GPU offers</h2></div><p>Sorted by normalized per-GPU hourly rate.</p></div>
+        <div className="detail-section-heading"><div><span className="eyebrow">Sample catalogue</span><h2>Indexed GPU configurations</h2></div><p>Sorted by normalized per-GPU hourly rate.</p></div>
         <div className="provider-offers-grid">
           {listings.map((offer) => {
             const gpu = getGpu(offer.gpuSlug)!;
+            const region = getRegionForOffer(offer);
             return (
               <article className="provider-offer" key={offer.id}>
                 <div className="provider-offer-top"><span>{offer.countryCode}</span><span className={`status ${offer.availability}`}><i />{offer.availability}</span></div>
                 <Link href={`/gpus/${gpu.slug}`}><h3>{gpu.shortName}</h3></Link>
-                <p>{offer.gpuCount}× GPU · {offer.ramGb} GB RAM · {offer.region}</p>
+                <p>{offer.gpuCount}× GPU · {offer.ramGb} GB RAM · {region ? <Link href={`/regions/${region.slug}`}>{offer.region}</Link> : offer.region}</p>
                 <div className="provider-offer-price"><strong>{money.format(offer.pricePerGpuHour)}</strong><span>/ GPU / hr</span></div>
-                <div className="provider-offer-foot"><a className="data-source-link" href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">Data source</a><a href={flatkeyComputeUrl(`${gpu.slug}_${provider.slug}`)} target="_blank" rel="noreferrer">Flatkey quote ↗</a></div>
+                <div className="provider-offer-foot"><a className="data-source-link" href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">Source ↗</a></div>
               </article>
             );
           })}
         </div>
+        <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Pricing guide</span><strong>Evaluate the full cost per GPU-hour →</strong></Link><Link href="/providers"><span>Provider directory</span><strong>Compare other GPU clouds →</strong></Link></div>
       </section>
     </main>
   );

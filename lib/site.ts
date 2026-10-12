@@ -1,10 +1,16 @@
 export const siteConfig = {
   name: process.env.NEXT_PUBLIC_SITE_NAME || "RackRate",
   description:
-    "Compare cloud GPU prices across providers, regions, and rental types with transparent sourcing.",
+    "Compare GPU rental prices per hour across cloud providers, regions, accelerators, and purchase models with transparent sourcing.",
   url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-  computeUrl: process.env.NEXT_PUBLIC_FLATKEY_COMPUTE_URL || "https://flatkey.ai/compute",
+  computeUrl:
+    process.env.NEXT_PUBLIC_FLATKEY_COMPUTE_URL ||
+    "https://console.flatkey.ai/compute/market",
 };
+
+export function absoluteUrl(path = "/") {
+  return new URL(path, siteConfig.url).toString();
+}
 
 export function flatkeyComputeUrl(content: string, campaign = "gpu_prices") {
   const url = new URL(siteConfig.computeUrl);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getGpu, getOffersForGpu, getProvider, gpus } from "@/lib/data";
-import { flatkeyComputeUrl } from "@/lib/site";
+import { absoluteUrl, flatkeyComputeUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
@@ -14,9 +14,13 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const gpu = getGpu((await params).slug);
   if (!gpu) return {};
+  const title = `${gpu.shortName} GPU rental prices per hour`;
+  const description = `Compare sample ${gpu.name} rental prices per hour, cloud providers, regions, node configurations, and availability.`;
   return {
-    title: `${gpu.shortName} cloud pricing`,
-    description: `Compare ${gpu.name} rental prices, providers, regions, and configurations.`,
+    title,
+    description,
+    alternates: { canonical: absoluteUrl(`/gpus/${gpu.slug}`) },
+    openGraph: { title, description, url: absoluteUrl(`/gpus/${gpu.slug}`) },
   };
 }
 
@@ -26,19 +30,29 @@ export default async function GpuPage({ params }: PageProps) {
   const listings = getOffersForGpu(gpu.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
   const floor = listings[0];
   const prices = listings.map((offer) => offer.pricePerGpuHour).sort((a, b) => a - b);
-  const median = prices.length ? prices[Math.floor(prices.length / 2)] : 0;
+  const midpoint = Math.floor(prices.length / 2);
+  const median = prices.length === 0
+    ? 0
+    : prices.length % 2 === 0
+      ? (prices[midpoint - 1] + prices[midpoint]) / 2
+      : prices[midpoint];
 
   return (
     <main className="detail-main">
       <section className="detail-hero shell">
-        <div className="breadcrumbs"><Link href="/">Home</Link><span>/</span><Link href="/#gpus">GPUs</Link><span>/</span><strong>{gpu.shortName}</strong></div>
+        <div className="breadcrumbs"><Link href="/">Home</Link><span>/</span><Link href="/gpus">GPUs</Link><span>/</span><strong>{gpu.shortName}</strong></div>
         <div className="detail-title-grid">
           <div>
             <span className="eyebrow">{gpu.vendor} · {gpu.architecture}</span>
             <h1>{gpu.shortName}<small>{gpu.vramGb} GB {gpu.memoryType}</small></h1>
             <p>{gpu.summary}</p>
           </div>
-          <div className="detail-price-block"><span>Lowest observed rate</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>per GPU / hour · sample feed</small><a href={flatkeyComputeUrl(gpu.slug)} target="_blank" rel="noreferrer">Get a Flatkey quote ↗</a></div>
+          <div className="detail-price-block">
+            <span>Lowest observed rate</span>
+            <strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong>
+            <small>per GPU / hour · sample feed</small>
+            <a className="detail-flatkey-cta" href={flatkeyComputeUrl(`${gpu.slug}_profile`, "gpu_detail")} target="_blank" rel="sponsored nofollow noreferrer">View {gpu.shortName} on Flatkey Compute <span>↗</span></a>
+          </div>
         </div>
         <div className="spec-strip">
           <div><span>Architecture</span><strong>{gpu.architecture}</strong></div>
@@ -58,15 +72,15 @@ export default async function GpuPage({ params }: PageProps) {
                 <div className="offer-rank">#{index + 1}</div>
                 <div><Link href={`/providers/${provider.slug}`} className="offer-provider">{provider.name}</Link><span>{provider.type}</span></div>
                 <div><span>Configuration</span><strong>{offer.gpuCount}× {gpu.shortName} · {offer.vcpu} vCPU</strong></div>
-                <div><span>Region</span><strong>{offer.region}</strong></div>
-                <div><span>Purchase</span><strong>{offer.rentalType}</strong></div>
+                <div className="offer-region"><span>Region</span><strong>{offer.region}</strong></div>
+                <div className="offer-purchase"><span>Purchase</span><strong>{offer.rentalType}</strong></div>
                 <div className="offer-price"><strong>{money.format(offer.pricePerGpuHour)}</strong><span>/ GPU / hr</span></div>
-                <a href={flatkeyComputeUrl(`${gpu.slug}_${provider.slug}`)} target="_blank" rel="noreferrer" className="offer-source">Quote ↗</a>
               </article>
             );
           })}
         </div>
         <aside className="data-notice"><strong>Launch dataset</strong><p>These rates are representative seed data used to validate the product experience. Production collectors will attach refresh status, raw currency, and the exact provider source to every row.</p><Link href="/methodology">Review the data contract →</Link></aside>
+        <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Buying guide</span><strong>How to compare GPU rental prices →</strong></Link><Link href="/regions"><span>Location index</span><strong>Compare GPU cloud regions →</strong></Link></div>
       </section>
     </main>
   );

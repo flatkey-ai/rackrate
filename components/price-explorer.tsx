@@ -48,6 +48,14 @@ export function PriceExplorer() {
       .sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
   }, [availableOnly, gpu, query, region, rental]);
 
+  const resetFilters = () => {
+    setQuery("");
+    setGpu("all");
+    setRental("On-demand");
+    setRegion("all");
+    setAvailableOnly(true);
+  };
+
   return (
     <div className="explorer-card">
       <div className="explorer-head">
@@ -55,7 +63,7 @@ export function PriceExplorer() {
           <span className="eyebrow">Market scanner / sample feed</span>
           <h2>Find capacity without opening thirty tabs.</h2>
         </div>
-        <div className="freshness"><span /> Sample rates · observed Oct 12</div>
+        <div className="freshness"><span /> Sample rates · observed Oct 12, 2026</div>
       </div>
 
       <div className="filter-bar">
@@ -91,14 +99,18 @@ export function PriceExplorer() {
 
       <div className="result-toolbar">
         <p><strong>{filtered.length}</strong> matching configurations</p>
-        <label className="check-control">
-          <input type="checkbox" checked={availableOnly} onChange={(event) => setAvailableOnly(event.target.checked)} />
-          <span aria-hidden="true" />
-          Available capacity only
-        </label>
+        <div className="result-controls">
+          <button type="button" className="reset-filters" onClick={resetFilters}>Reset filters</button>
+          <label className="check-control">
+            <input type="checkbox" checked={availableOnly} onChange={(event) => setAvailableOnly(event.target.checked)} />
+            <span aria-hidden="true" />
+            Available capacity only
+          </label>
+        </div>
       </div>
 
-      <div className="price-table-wrap">
+      <div className="table-scroll-hint" aria-hidden="true"><span>Swipe to compare all columns</span><i>→</i></div>
+      <div className="price-table-wrap" tabIndex={0} role="region" aria-label="Scrollable GPU price comparison table">
         <table className="price-table">
           <thead>
             <tr>
@@ -108,7 +120,6 @@ export function PriceExplorer() {
               <th>Rental</th>
               <th>Availability</th>
               <th className="numeric">Per GPU / hr</th>
-              <th>Flatkey</th>
             </tr>
           </thead>
           <tbody>
@@ -126,7 +137,6 @@ export function PriceExplorer() {
                   <td>{offer.rentalType}</td>
                   <td><span className={`status ${offer.availability}`}><i />{availabilityLabel[offer.availability]}</span></td>
                   <td className="numeric price-cell"><strong>{money.format(offer.pricePerGpuHour)}</strong><small>{money.format(offer.pricePerGpuHour * offer.gpuCount)} total</small></td>
-                  <td><a className="quote-action" href={flatkeyComputeUrl(`${gpuEntry.slug}_${provider.slug}`)} target="_blank" rel="noreferrer" aria-label={`Find ${gpuEntry.shortName} compute on Flatkey`}>Get quote ↗</a></td>
                 </tr>
               );
             })}
@@ -138,6 +148,12 @@ export function PriceExplorer() {
         <span>Prices are normalized to USD per GPU-hour.</span>
         <Link href="/methodology">How comparison works →</Link>
       </div>
+      {filtered.length > 0 && (
+        <div className="explorer-conversion">
+          <div><strong>Ready to deploy the shortlist?</strong><span>Continue to Flatkey Compute to review current GPU options.</span></div>
+          <a className="button button-primary" href={flatkeyComputeUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Continue to Flatkey Compute <span>↗</span></a>
+        </div>
+      )}
     </div>
   );
 }

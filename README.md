@@ -39,7 +39,7 @@ Copy `.env.example` to `.env.local` and set:
 
 - `NEXT_PUBLIC_SITE_URL`: canonical production origin
 - `NEXT_PUBLIC_SITE_NAME`: final public brand
-- `NEXT_PUBLIC_FLATKEY_COMPUTE_URL`: Flatkey Compute landing page (defaults to `https://flatkey.ai/compute`)
+- `NEXT_PUBLIC_FLATKEY_COMPUTE_URL`: Flatkey Compute product entry (defaults to `https://console.flatkey.ai/compute/market`)
 
 ## Next data milestone
 

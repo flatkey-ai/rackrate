@@ -1,26 +1,29 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { flatkeyComputeUrl, siteConfig } from "@/lib/site";
+import { absoluteUrl, siteConfig } from "@/lib/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: `${siteConfig.name} — Cloud GPU price intelligence`,
+    default: `${siteConfig.name} — Compare GPU rental prices per hour`,
     template: `%s · ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  alternates: { canonical: absoluteUrl("/") },
   openGraph: {
-    title: `${siteConfig.name} — Cloud GPU price intelligence`,
+    title: `${siteConfig.name} — Compare GPU rental prices per hour`,
     description: siteConfig.description,
     type: "website",
+    url: absoluteUrl("/"),
   },
+  twitter: { card: "summary" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body>
         <header className="site-header">
           <div className="shell header-inner">
@@ -30,11 +33,12 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
             </Link>
             <nav className="main-nav" aria-label="Main navigation">
               <Link href="/#prices">Prices</Link>
-              <Link href="/#gpus">GPUs</Link>
-              <Link href="/#providers">Providers</Link>
-              <Link href="/methodology">Methodology</Link>
+              <Link href="/gpus">GPUs</Link>
+              <Link href="/providers">Providers</Link>
+              <Link href="/regions">Regions</Link>
+              <Link href="/guides/gpu-rental-pricing">Guide</Link>
             </nav>
-            <a href={flatkeyComputeUrl("header")} className="header-cta">Find GPU compute <span>↗</span></a>
+            <Link href="/#prices" className="header-cta">Compare prices <span>↓</span></Link>
           </div>
         </header>
         {children}
@@ -49,15 +53,16 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
             </div>
             <div>
               <strong>Explore</strong>
-              <Link href="/#prices">Live comparison</Link>
-              <Link href="/#gpus">GPU catalogue</Link>
-              <Link href="/#providers">Cloud providers</Link>
+              <Link href="/#prices">Price comparison</Link>
+              <Link href="/gpus">GPU rental prices</Link>
+              <Link href="/providers">Cloud providers</Link>
+              <Link href="/regions">GPU cloud regions</Link>
             </div>
             <div>
-              <strong>About the data</strong>
+              <strong>Learn</strong>
+              <Link href="/guides/gpu-rental-pricing">GPU pricing guide</Link>
               <Link href="/methodology">Methodology</Link>
-              <a href={flatkeyComputeUrl("footer")}>Flatkey Compute ↗</a>
-              <a href="mailto:data@example.com">Report a price</a>
+              <Link href="/gpus">Browse GPU profiles</Link>
               <span>Sample data for launch preview</span>
             </div>
           </div>

@@ -42,6 +42,17 @@ export type Offer = {
   observedAt: string;
 };
 
+export type RegionProfile = {
+  slug: string;
+  name: string;
+  label: string;
+  countryCodes: string[];
+  regionNames: string[];
+  summary: string;
+  bestFor: string;
+  planningNotes: [string, string, string];
+};
+
 export const gpus: Gpu[] = [
   {
     slug: "nvidia-h100",
@@ -200,10 +211,95 @@ export const offers: Offer[] = [
   { id: "runpod-4090-global", gpuSlug: "nvidia-rtx-4090", providerSlug: "runpod", gpuCount: 1, vcpu: 16, ramGb: 62, pricePerGpuHour: 0.59, rentalType: "On-demand", region: "Global", countryCode: "GL", availability: "available", egress: "$0.10/GB", sourceUrl: "https://www.runpod.io/pricing", observedAt: "2026-10-12" }
 ];
 
+export const regions: RegionProfile[] = [
+  {
+    slug: "canada",
+    name: "Canada",
+    label: "Canadian GPU cloud",
+    countryCodes: ["CA"],
+    regionNames: ["Canada"],
+    summary: "Compare sample GPU cloud rates published for Canadian capacity, including Hopper and Ampere accelerators.",
+    bestFor: "Teams that want a Canadian deployment location and a direct view of locally listed accelerator options.",
+    planningNotes: [
+      "Confirm the exact datacenter location rather than treating a country-level label as a latency guarantee.",
+      "Ask whether public bandwidth, storage, and support are included in the advertised accelerator rate.",
+      "Validate current capacity before designing a cluster around a low sample price.",
+    ],
+  },
+  {
+    slug: "united-states",
+    name: "United States",
+    label: "US GPU cloud",
+    countryCodes: ["US"],
+    regionNames: ["United States", "US East"],
+    summary: "Review sample US GPU rental offers across marketplace, specialist-cloud, and hyperscaler purchasing models.",
+    bestFor: "Buyers comparing broad provider choice, flexible procurement models, and proximity to US-based data or users.",
+    planningNotes: [
+      "Cloud regions within the United States can have materially different inventory, latency, and egress policies.",
+      "Spot and marketplace listings should be evaluated separately from stable on-demand capacity.",
+      "Compare the whole node configuration when CPU, RAM, local storage, or interconnect affects the workload.",
+    ],
+  },
+  {
+    slug: "europe",
+    name: "Europe",
+    label: "European GPU cloud",
+    countryCodes: ["EU", "FI"],
+    regionNames: ["Europe", "Finland"],
+    summary: "Compare sample European GPU capacity, from flexible single-GPU listings to reserved high-memory accelerators.",
+    bestFor: "Workloads that benefit from a European deployment footprint or need to shortlist region-specific infrastructure.",
+    planningNotes: [
+      "A generic Europe label may span several countries; request the physical location before assessing latency or policy needs.",
+      "Reserved pricing can carry term, deposit, or minimum-quantity conditions that are not visible in the hourly rate.",
+      "Keep data-transfer assumptions explicit when training data and checkpoints cross cloud or country boundaries.",
+    ],
+  },
+  {
+    slug: "india",
+    name: "India",
+    label: "India GPU cloud",
+    countryCodes: ["IN"],
+    regionNames: ["India"],
+    summary: "Inspect the sample GPU capacity currently indexed for India and compare its normalized per-GPU cost.",
+    bestFor: "Teams prioritizing an India deployment footprint or testing regional capacity close to South Asian users and data.",
+    planningNotes: [
+      "A single listing is a market signal, not proof of durable regional supply; confirm replacement capacity and lead time.",
+      "Multi-GPU nodes should be compared on total node cost as well as the normalized per-GPU figure.",
+      "Verify interconnect, storage throughput, and network quotas before treating a cluster as training-ready.",
+    ],
+  },
+  {
+    slug: "global",
+    name: "Global listings",
+    label: "Global GPU marketplace",
+    countryCodes: ["GL"],
+    regionNames: ["Global"],
+    summary: "Compare globally labeled GPU listings when flexibility and accelerator choice matter more than a fixed location.",
+    bestFor: "Portable inference, experiments, and batch workloads that can choose capacity based on price and availability.",
+    planningNotes: [
+      "Treat global as a discovery label; obtain the actual host region before moving regulated or latency-sensitive data.",
+      "Check whether availability and pricing vary after selecting a concrete datacenter or host.",
+      "Include egress and checkpoint movement in the cost model when jobs can land in different locations.",
+    ],
+  },
+];
+
 export const getGpu = (slug: string) => gpus.find((gpu) => gpu.slug === slug);
 export const getProvider = (slug: string) => providers.find((provider) => provider.slug === slug);
 export const getOffersForGpu = (slug: string) => offers.filter((offer) => offer.gpuSlug === slug);
 export const getOffersForProvider = (slug: string) => offers.filter((offer) => offer.providerSlug === slug);
+export const getRegion = (slug: string) => regions.find((region) => region.slug === slug);
+export const getOffersForRegion = (slug: string) => {
+  const region = getRegion(slug);
+  if (!region) return [];
+  return offers.filter(
+    (offer) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region),
+  );
+};
+export const getRegionForOffer = (offer: Offer) =>
+  regions.find(
+    (region) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region),
+  );
 
 export function getCheapestOffer(gpuSlug?: string) {
   const matching = gpuSlug ? offers.filter((offer) => offer.gpuSlug === gpuSlug) : offers;
