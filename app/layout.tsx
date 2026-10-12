@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   },
   description: siteConfig.description,
   alternates: { canonical: absoluteUrl("/") },
+  verification: { google: "dmaO3nL690AKnVSn-LzYLH3zMF71rz8U-DsKzvhnZSs" },
   openGraph: {
     title: `${siteConfig.name} — Compare GPU rental prices per hour`,
     description: siteConfig.description,
