@@ -38,6 +38,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <Link href="/providers">Providers</Link>
               <Link href="/regions">Regions</Link>
               <Link href="/guides/gpu-rental-pricing">Guide</Link>
+              <Link href="/blog">Blog</Link>
             </nav>
             <Link href="/#prices" className="header-cta">Compare prices <span>↓</span></Link>
           </div>
@@ -58,6 +59,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <Link href="/gpus">GPU rental prices</Link>
               <Link href="/providers">Cloud providers</Link>
               <Link href="/regions">GPU cloud regions</Link>
+              <Link href="/blog">RackRate blog</Link>
             </div>
             <div>
               <strong>Learn</strong>
