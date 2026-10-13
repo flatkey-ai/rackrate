@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { gpus, offers, providers, type Availability, type RentalType } from "@/lib/data";
+import { gpus, offers, offerDatasetGeneratedAt, providers, type Availability, type RentalType } from "@/lib/data";
 import { flatkeyComputeUrl } from "@/lib/site";
 
 const availabilityLabel: Record<Availability, string> = {
   available: "Available",
   limited: "Limited",
   unavailable: "Out",
+  unknown: "Check provider",
 };
+
+const freshness = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "UTC",
+}).format(new Date(offerDatasetGeneratedAt));
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -60,10 +67,10 @@ export function PriceExplorer() {
     <div className="explorer-card">
       <div className="explorer-head">
         <div>
-          <span className="eyebrow">Market scanner / sample feed</span>
+          <span className="eyebrow">Market scanner / sourced feed</span>
           <h2>Find capacity without opening thirty tabs.</h2>
         </div>
-        <div className="freshness"><span /> Sample rates · observed Oct 12, 2026</div>
+        <div className="freshness"><span /> Dataset refreshed {freshness} UTC</div>
       </div>
 
       <div className="filter-bar">
@@ -132,7 +139,7 @@ export function PriceExplorer() {
                     <Link className="gpu-link" href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link>
                     <Link className="provider-link" href={`/providers/${provider.slug}`}>{provider.name}</Link>
                   </td>
-                  <td><strong>{offer.gpuCount}×</strong> · {offer.vcpu} vCPU · {offer.ramGb} GB</td>
+                  <td>{offer.vcpu && offer.ramGb ? <><strong>{offer.gpuCount}×</strong> · {offer.vcpu} vCPU · {offer.ramGb} GB</> : <><strong>{offer.gpuCount}×</strong> · configuration varies</>}</td>
                   <td><span className="country-code">{offer.countryCode}</span>{offer.region}</td>
                   <td>{offer.rentalType}</td>
                   <td><span className={`status ${offer.availability}`}><i />{availabilityLabel[offer.availability]}</span></td>

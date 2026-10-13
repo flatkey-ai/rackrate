@@ -1,4 +1,6 @@
-export type Availability = "available" | "limited" | "unavailable";
+import offerDataset from "@/data/offers.json";
+
+export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
 
 export type Gpu = {
@@ -30,8 +32,8 @@ export type Offer = {
   gpuSlug: string;
   providerSlug: string;
   gpuCount: number;
-  vcpu: number;
-  ramGb: number;
+  vcpu?: number;
+  ramGb?: number;
   pricePerGpuHour: number;
   rentalType: RentalType;
   region: string;
@@ -40,6 +42,9 @@ export type Offer = {
   egress: string;
   sourceUrl: string;
   observedAt: string;
+  sourceCurrency: "USD";
+  billingUnit: "GPU-hour";
+  dataStatus: "official-page" | "seed";
 };
 
 export type RegionProfile = {
@@ -191,7 +196,7 @@ export const providers: Provider[] = [
   },
 ];
 
-export const offers: Offer[] = [
+export const seedOffers: Omit<Offer, "sourceCurrency" | "billingUnit" | "dataStatus">[] = [
   { id: "vast-h100-in", gpuSlug: "nvidia-h100", providerSlug: "vast-ai", gpuCount: 8, vcpu: 192, ramGb: 2268, pricePerGpuHour: 1.56, rentalType: "On-demand", region: "India", countryCode: "IN", availability: "limited", egress: "Free", sourceUrl: "https://vast.ai", observedAt: "2026-10-12" },
   { id: "hyper-h100-ca", gpuSlug: "nvidia-h100", providerSlug: "hyperstack", gpuCount: 8, vcpu: 252, ramGb: 1440, pricePerGpuHour: 2.5, rentalType: "On-demand", region: "Canada", countryCode: "CA", availability: "available", egress: "Free", sourceUrl: "https://www.hyperstack.cloud/gpu-pricing", observedAt: "2026-10-12" },
   { id: "runpod-h100-global", gpuSlug: "nvidia-h100", providerSlug: "runpod", gpuCount: 8, vcpu: 64, ramGb: 512, pricePerGpuHour: 2.59, rentalType: "On-demand", region: "Global", countryCode: "GL", availability: "limited", egress: "$0.10/GB", sourceUrl: "https://www.runpod.io/pricing", observedAt: "2026-10-12" },
@@ -210,6 +215,9 @@ export const offers: Offer[] = [
   { id: "vast-4090-eu", gpuSlug: "nvidia-rtx-4090", providerSlug: "vast-ai", gpuCount: 1, vcpu: 12, ramGb: 64, pricePerGpuHour: 0.32, rentalType: "On-demand", region: "Europe", countryCode: "EU", availability: "available", egress: "Variable", sourceUrl: "https://vast.ai", observedAt: "2026-10-12" },
   { id: "runpod-4090-global", gpuSlug: "nvidia-rtx-4090", providerSlug: "runpod", gpuCount: 1, vcpu: 16, ramGb: 62, pricePerGpuHour: 0.59, rentalType: "On-demand", region: "Global", countryCode: "GL", availability: "available", egress: "$0.10/GB", sourceUrl: "https://www.runpod.io/pricing", observedAt: "2026-10-12" }
 ];
+
+export const offers = offerDataset.offers as Offer[];
+export const offerDatasetGeneratedAt = offerDataset.generatedAt;
 
 export const regions: RegionProfile[] = [
   {

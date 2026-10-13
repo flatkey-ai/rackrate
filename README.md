@@ -1,4 +1,4 @@
-# GPU Prices
+# RackRate
 
 Independent cloud GPU price-comparison site. The launch UI is branded **RackRate** through `NEXT_PUBLIC_SITE_NAME`; the brand and final domain can be changed without touching page code.
 
@@ -9,10 +9,10 @@ Independent cloud GPU price-comparison site. The launch UI is branded **RackRate
 - Transparent methodology page
 - Sitemap and robots metadata
 - Standalone Next.js build and Docker image
-- Seed dataset with source links and observation dates
+- Versioned dataset with source links, observation dates, and a fail-closed official-page collector
 - High-intent CTAs routed to Flatkey Compute with per-page UTM attribution
 
-The included prices are clearly labeled sample data for product validation. Replace `lib/data.ts` with collectors or a database/API before presenting the feed as live.
+RunPod prices are refreshed from its official pricing page every six hours. Other provider records remain clearly labeled seed observations until their public collectors are implemented. The workflow validates the parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
 
 ## Local development
 
@@ -44,3 +44,20 @@ Copy `.env.example` to `.env.local` and set:
 ## Next data milestone
 
 Keep immutable GPU specifications separate from time-series offers. Each production offer should preserve its provider SKU, source currency, billing unit, original total price, normalized USD/GPU-hour, availability status, source URL, and observation time.
+
+## Refresh pricing locally
+
+```bash
+bun run data:refresh
+bun run test
+bun run typecheck
+bun run build
+```
+
+The generated file is `data/offers.json`. Collector code is intentionally public under `scripts/` so every published number can be reproduced and reviewed.
+
+See [DATA.md](DATA.md) for the freshness, normalization, and failure policy.
+
+## License
+
+MIT
