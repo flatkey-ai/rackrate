@@ -25,6 +25,11 @@ const money = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const observedDate = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeZone: "UTC",
+});
+
 export function PriceExplorer() {
   const [query, setQuery] = useState("");
   const [gpu, setGpu] = useState("all");
@@ -138,6 +143,13 @@ export function PriceExplorer() {
                   <td>
                     <Link className="gpu-link" href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link>
                     <Link className="provider-link" href={`/providers/${provider.slug}`}>{provider.name}</Link>
+                    <span className="offer-evidence">
+                      <a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">
+                        {offer.dataStatus === "official-page" ? "Official source" : "Baseline source"} ↗
+                      </a>
+                      <span aria-hidden="true">·</span>
+                      <time dateTime={offer.observedAt}>{observedDate.format(new Date(offer.observedAt))}</time>
+                    </span>
                   </td>
                   <td>{offer.vcpu && offer.ramGb ? <><strong>{offer.gpuCount}×</strong> · {offer.vcpu} vCPU · {offer.ramGb} GB</> : <><strong>{offer.gpuCount}×</strong> · configuration varies</>}</td>
                   <td><span className="country-code">{offer.countryCode}</span>{offer.region}</td>
