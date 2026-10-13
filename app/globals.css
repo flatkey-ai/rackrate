@@ -28,8 +28,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .site-header { position: sticky; top: 0; z-index: 50; background: rgba(243, 241, 233, 0.92); border-bottom: 1px solid var(--line); backdrop-filter: blur(16px); }
 .header-inner { min-height: 74px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: clamp(24px, 4vw, 64px); align-items: center; }
 .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -0.04em; font-size: 19px; width: fit-content; }
-.brand-mark { display: grid; grid-template-columns: repeat(3, 5px); align-items: end; gap: 3px; width: 21px; height: 22px; padding: 4px; background: var(--ink); transform: skewY(-7deg); }
-.brand-mark i { display: block; width: 5px; background: var(--acid); }
+.brand-mark { display: grid; grid-template-columns: repeat(3, 4px); align-items: end; gap: 2px; width: 24px; height: 24px; padding: 4px; overflow: hidden; background: var(--ink); transform: skewY(-7deg); }
+.brand-mark i { display: block; width: 4px; background: var(--acid); }
 .brand-mark i:nth-child(1) { height: 6px; }
 .brand-mark i:nth-child(2) { height: 11px; }
 .brand-mark i:nth-child(3) { height: 15px; }
