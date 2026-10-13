@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-13T09:17:41.025Z",
+  "generatedAt": "2026-10-13T09:19:41.723Z",
   "sources": [
     {
       "provider": "seed",
@@ -13,22 +13,29 @@
       "provider": "runpod",
       "url": "https://www.runpod.io/pricing",
       "status": "ok",
-      "fetchedAt": "2026-10-13T09:17:39.419Z",
+      "fetchedAt": "2026-10-13T09:19:40.325Z",
       "offerCount": 6
     },
     {
       "provider": "hyperstack",
       "url": "https://www.hyperstack.cloud/gpu-pricing",
       "status": "ok",
-      "fetchedAt": "2026-10-13T09:17:39.686Z",
+      "fetchedAt": "2026-10-13T09:19:40.762Z",
       "offerCount": 4
     },
     {
       "provider": "nebius",
       "url": "https://nebius.com/prices",
       "status": "ok",
-      "fetchedAt": "2026-10-13T09:17:41.025Z",
+      "fetchedAt": "2026-10-13T09:19:41.723Z",
       "offerCount": 4
+    },
+    {
+      "provider": "lambda",
+      "url": "https://lambda.ai/service/gpu-cloud",
+      "status": "ok",
+      "fetchedAt": "2026-10-13T09:19:41.056Z",
+      "offerCount": 3
     }
   ],
   "offers": [
@@ -65,7 +72,7 @@
       "availability": "unknown",
       "egress": "Free",
       "sourceUrl": "https://www.hyperstack.cloud/gpu-pricing",
-      "observedAt": "2026-10-13T09:17:39.686Z",
+      "observedAt": "2026-10-13T09:19:40.762Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -84,7 +91,7 @@
       "availability": "unknown",
       "egress": "Free",
       "sourceUrl": "https://www.hyperstack.cloud/gpu-pricing",
-      "observedAt": "2026-10-13T09:17:39.686Z",
+      "observedAt": "2026-10-13T09:19:40.762Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -103,7 +110,7 @@
       "availability": "unknown",
       "egress": "Free",
       "sourceUrl": "https://www.hyperstack.cloud/gpu-pricing",
-      "observedAt": "2026-10-13T09:17:39.686Z",
+      "observedAt": "2026-10-13T09:19:40.762Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -122,7 +129,7 @@
       "availability": "unknown",
       "egress": "Free",
       "sourceUrl": "https://www.hyperstack.cloud/gpu-pricing",
-      "observedAt": "2026-10-13T09:17:39.686Z",
+      "observedAt": "2026-10-13T09:19:40.762Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -147,23 +154,61 @@
       "dataStatus": "seed"
     },
     {
+      "id": "lambda-a100-us",
+      "gpuSlug": "nvidia-a100-80gb",
+      "providerSlug": "lambda",
+      "gpuCount": 1,
+      "vcpu": 240,
+      "ramGb": 1800,
+      "pricePerGpuHour": 2.79,
+      "rentalType": "On-demand",
+      "region": "United States",
+      "countryCode": "US",
+      "availability": "unknown",
+      "egress": "Free",
+      "sourceUrl": "https://lambda.ai/service/gpu-cloud",
+      "observedAt": "2026-10-13T09:19:41.056Z",
+      "sourceCurrency": "USD",
+      "billingUnit": "GPU-hour",
+      "dataStatus": "official-page"
+    },
+    {
+      "id": "lambda-b200-us",
+      "gpuSlug": "nvidia-b200",
+      "providerSlug": "lambda",
+      "gpuCount": 1,
+      "vcpu": 208,
+      "ramGb": 2900,
+      "pricePerGpuHour": 6.69,
+      "rentalType": "On-demand",
+      "region": "United States",
+      "countryCode": "US",
+      "availability": "unknown",
+      "egress": "Free",
+      "sourceUrl": "https://lambda.ai/service/gpu-cloud",
+      "observedAt": "2026-10-13T09:19:41.056Z",
+      "sourceCurrency": "USD",
+      "billingUnit": "GPU-hour",
+      "dataStatus": "official-page"
+    },
+    {
       "id": "lambda-h100-us",
       "gpuSlug": "nvidia-h100",
       "providerSlug": "lambda",
       "gpuCount": 1,
       "vcpu": 26,
-      "ramGb": 200,
-      "pricePerGpuHour": 4.29,
+      "ramGb": 225,
+      "pricePerGpuHour": 3.29,
       "rentalType": "On-demand",
       "region": "United States",
       "countryCode": "US",
-      "availability": "limited",
-      "egress": "$0.02/GB",
+      "availability": "unknown",
+      "egress": "Free",
       "sourceUrl": "https://lambda.ai/service/gpu-cloud",
-      "observedAt": "2026-10-12",
+      "observedAt": "2026-10-13T09:19:41.056Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
-      "dataStatus": "seed"
+      "dataStatus": "official-page"
     },
     {
       "id": "nebius-b200-eu",
@@ -179,7 +224,7 @@
       "availability": "unknown",
       "egress": "Variable",
       "sourceUrl": "https://nebius.com/prices",
-      "observedAt": "2026-10-13T09:17:41.025Z",
+      "observedAt": "2026-10-13T09:19:41.723Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -198,7 +243,7 @@
       "availability": "unknown",
       "egress": "Variable",
       "sourceUrl": "https://nebius.com/prices",
-      "observedAt": "2026-10-13T09:17:41.025Z",
+      "observedAt": "2026-10-13T09:19:41.723Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -217,7 +262,7 @@
       "availability": "unknown",
       "egress": "Variable",
       "sourceUrl": "https://nebius.com/prices",
-      "observedAt": "2026-10-13T09:17:41.025Z",
+      "observedAt": "2026-10-13T09:19:41.723Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -234,7 +279,7 @@
       "availability": "unknown",
       "egress": "Variable",
       "sourceUrl": "https://nebius.com/prices",
-      "observedAt": "2026-10-13T09:17:41.025Z",
+      "observedAt": "2026-10-13T09:19:41.723Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -251,7 +296,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -268,7 +313,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -285,7 +330,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -302,7 +347,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -319,7 +364,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"
@@ -336,7 +381,7 @@
       "availability": "unknown",
       "egress": "$0.10/GB",
       "sourceUrl": "https://www.runpod.io/pricing",
-      "observedAt": "2026-10-13T09:17:39.419Z",
+      "observedAt": "2026-10-13T09:19:40.325Z",
       "sourceCurrency": "USD",
       "billingUnit": "GPU-hour",
       "dataStatus": "official-page"

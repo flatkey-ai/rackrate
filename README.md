@@ -12,7 +12,7 @@ Independent cloud GPU price-comparison site. The launch UI is branded **RackRate
 - Versioned dataset with source links, observation dates, and a fail-closed official-page collector
 - High-intent CTAs routed to Flatkey Compute with per-page UTM attribution
 
-RunPod, Hyperstack, and Nebius prices are refreshed from their official pricing pages every six hours. Other provider records remain clearly labeled seed observations until their public collectors are implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
+RunPod, Hyperstack, Nebius, and Lambda prices are refreshed from their official pricing pages every six hours. Vast.ai and AWS records remain clearly labeled seed observations until authenticated or region-complete collectors are implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
 
 ## Local development
 
