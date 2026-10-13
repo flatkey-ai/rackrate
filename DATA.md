@@ -24,6 +24,6 @@ reserved, and on-demand rates keep distinct `rentalType` values.
 
 ## Current coverage
 
-The RunPod adapter is automated. Other providers remain seed observations
+The RunPod and Hyperstack adapters are automated. Other providers remain seed observations
 until a public source and parser have been validated. Contributions should add
 a fixture-based parser test before enabling a new provider in the workflow.

@@ -12,7 +12,7 @@ Independent cloud GPU price-comparison site. The launch UI is branded **RackRate
 - Versioned dataset with source links, observation dates, and a fail-closed official-page collector
 - High-intent CTAs routed to Flatkey Compute with per-page UTM attribution
 
-RunPod prices are refreshed from its official pricing page every six hours. Other provider records remain clearly labeled seed observations until their public collectors are implemented. The workflow validates the parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
+RunPod and Hyperstack prices are refreshed from their official pricing pages every six hours. Other provider records remain clearly labeled seed observations until their public collectors are implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
 
 ## Local development
 
