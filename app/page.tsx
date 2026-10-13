@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PriceExplorer } from "@/components/price-explorer";
 import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, offers, providers, regions } from "@/lib/data";
-import { flatkeyComputeUrl } from "@/lib/site";
+import { flatkeyWebsiteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
@@ -19,7 +19,7 @@ export default function Home() {
             <h1>The price of compute,<br /><em>made comparable.</em></h1>
             <p>Compare sample GPU rental prices per hour across providers, regions, and purchase models. Review the listed configuration context before you shortlist a cloud.</p>
             <div className="hero-actions">
-              <a className="button button-primary" href={flatkeyComputeUrl("home_hero", "homepage")} target="_blank" rel="sponsored nofollow noreferrer">Open Flatkey Compute <span>↗</span></a>
+              <a className="button button-primary" href={flatkeyWebsiteUrl("home_hero")} target="_blank" rel="sponsored nofollow noreferrer">Explore Flatkey GPU Cloud <span>↗</span></a>
               <Link className="button button-secondary" href="#prices">Compare GPU prices <span>↓</span></Link>
             </div>
           </div>
