@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getGpu, getOffersForRegion, getProvider, getRegion, regions } from "@/lib/data";
+import { getGpu, getOffersForRegion, getProvider, getRegion, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
 import { absoluteUrl, flatkeyComputeUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
@@ -21,6 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title,
     description,
+    robots: { index: isRegionIndexable(region.slug), follow: true },
     alternates: { canonical: absoluteUrl(`/regions/${region.slug}`) },
     openGraph: { title, description, url: absoluteUrl(`/regions/${region.slug}`) },
   };
@@ -34,7 +35,27 @@ export default async function RegionDetailPage({ params }: PageProps) {
   const providerCount = new Set(regionOffers.map((offer) => offer.providerSlug)).size;
   const gpuCount = new Set(regionOffers.map((offer) => offer.gpuSlug)).size;
   const sourceLabels = Array.from(new Set(regionOffers.map((offer) => offer.region)));
+  const coverage = getRegionCoverage(region.slug);
+  const observedTimes = regionOffers.map((offer) => new Date(offer.observedAt).getTime()).filter(Number.isFinite);
+  const latestObservation = observedTimes.length ? new Date(Math.max(...observedTimes)) : null;
   const otherRegions = regions.filter((entry) => entry.slug !== region.slug).slice(0, 3);
+  const verificationDate = latestObservation
+    ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(latestObservation)
+    : "No observation";
+  const faqs = [
+    {
+      question: `Is ${region.name} the cheapest region for GPU rental?`,
+      answer: `RackRate does not treat the lowest visible observation as a universal regional floor. This page currently contains ${coverage.offerCount} configuration${coverage.offerCount === 1 ? "" : "s"} from ${providerCount} provider${providerCount === 1 ? "" : "s"}; terms, node size, availability, and data transfer can change the actual cost.`,
+    },
+    {
+      question: `How current is the ${region.name} pricing data?`,
+      answer: `The newest source observation on this page is dated ${verificationDate}. Verified official prices come from provider-owned pricing pages; reference prices are dated observations that require direct confirmation.`,
+    },
+    {
+      question: `What should buyers verify before deploying in ${region.name}?`,
+      answer: region.buyingQuestions.join(" "),
+    },
+  ];
 
   const breadcrumbSchema = {
     "@context": "https://schema.org",
@@ -45,10 +66,20 @@ export default async function RegionDetailPage({ params }: PageProps) {
       { "@type": "ListItem", position: 3, name: region.name, item: absoluteUrl(`/regions/${region.slug}`) },
     ],
   };
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((faq) => ({
+      "@type": "Question",
+      name: faq.question,
+      acceptedAnswer: { "@type": "Answer", text: faq.answer },
+    })),
+  };
 
   return (
     <main className="region-detail detail-main">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
       <section className="region-detail-hero shell">
         <div className="breadcrumbs"><Link href="/">Home</Link><span>/</span><Link href="/regions">Regions</Link><span>/</span><strong>{region.name}</strong></div>
         <div className="region-detail-title">
@@ -56,8 +87,8 @@ export default async function RegionDetailPage({ params }: PageProps) {
           <div className="region-metric-panel">
             <div><span>Sample floor</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>per GPU / hour</small></div>
             <div><span>Indexed GPUs</span><strong>{gpuCount}</strong><small>accelerator models</small></div>
-            <div><span>Providers</span><strong>{providerCount}</strong><small>in launch sample</small></div>
-            <div><span>Source labels</span><strong className="metric-text">{sourceLabels.join(" · ") || "None"}</strong><small>grouped on this page</small></div>
+            <div><span>Source confidence</span><strong>{coverage.officialCount} / {coverage.referenceCount}</strong><small>verified / reference</small></div>
+            <div><span>Last checked</span><strong className="metric-text">{verificationDate}</strong><small>{sourceLabels.join(" · ") || "No source label"}</small></div>
           </div>
         </div>
       </section>
@@ -74,12 +105,24 @@ export default async function RegionDetailPage({ params }: PageProps) {
                 <div><span>Provider</span><Link href={`/providers/${provider.slug}`}>{provider.name}</Link><small>{provider.type}</small></div>
                 <div><span>Node</span><strong>{offer.gpuCount}× GPU · {offer.vcpu} vCPU</strong><small>{offer.ramGb} GB system RAM</small></div>
                 <div><span>Terms</span><strong>{offer.rentalType}</strong><small>{offer.availability} · egress {offer.egress}</small></div>
-                <div className="region-offer-price"><span>Per GPU / hr</span><strong>{money.format(offer.pricePerGpuHour)}</strong><small>{money.format(offer.pricePerGpuHour * offer.gpuCount)} total / hr</small></div>
+                <div className="region-offer-price"><span>Per GPU / hr</span><strong>{money.format(offer.pricePerGpuHour)}</strong><small>{money.format(offer.pricePerGpuHour * offer.gpuCount)} total / hr</small><a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "official-page" ? "Verified official price" : "Reference price"} ↗</a></div>
               </article>
             );
           })}
         </div>
         <div className="sample-disclosure"><strong>Sample coverage, not live inventory.</strong><p>These launch records demonstrate the comparison model. Confirm current location, quantity, machine specification, terms, and availability with a provider or a firm quote before making a deployment decision.</p></div>
+      </section>
+
+      <section className="region-research shell">
+        <div className="directory-intro">
+          <div><span className="eyebrow">Coverage before conclusions</span><h2>What this page can—and cannot—tell you.</h2></div>
+          <p>{region.marketContext}</p>
+        </div>
+        <div className="region-research-grid">
+          <article><span>01</span><h3>Evidence in scope</h3><p>{coverage.officialCount} verified official price{coverage.officialCount === 1 ? "" : "s"}, {coverage.referenceCount} reference observation{coverage.referenceCount === 1 ? "" : "s"}, and {providerCount} provider{providerCount === 1 ? "" : "s"}. The newest observation is {verificationDate}.</p></article>
+          <article><span>02</span><h3>What remains unknown</h3><p>RackRate does not infer unlisted inventory, private discounts, tax, storage, support, facility-level latency, or contractual data-residency guarantees.</p></article>
+          <article><span>03</span><h3>Search-quality policy</h3><p>{isRegionIndexable(region.slug) ? "This market has enough verified breadth to appear in the public sitemap." : "This limited research note stays out of the public sitemap until verified coverage reaches at least three configurations."}</p></article>
+        </div>
       </section>
 
       <section className="region-notes">
@@ -94,6 +137,11 @@ export default async function RegionDetailPage({ params }: PageProps) {
         <div className="related-link-grid">
           {otherRegions.map((entry) => <Link href={`/regions/${entry.slug}`} key={entry.slug}><span>{entry.label}</span><strong>{entry.name}</strong><i>↗</i></Link>)}
         </div>
+      </section>
+
+      <section className="region-faq shell">
+        <div className="directory-intro"><div><span className="eyebrow">Buyer questions</span><h2>Before the region becomes a commitment.</h2></div><p>These answers reflect the coverage visible on this page, not a promise of current inventory.</p></div>
+        <div className="faq-list">{faqs.map((faq) => <details key={faq.question}><summary>{faq.question}</summary><p>{faq.answer}</p></details>)}</div>
       </section>
     </main>
   );

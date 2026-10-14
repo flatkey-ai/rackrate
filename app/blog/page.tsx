@@ -6,6 +6,7 @@ import { absoluteUrl } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Cloud GPU pricing, providers, and cost guides",
   description: "Sourced guides to GPU rental prices, provider terms, regions, availability, and the hidden costs behind hourly rates.",
+  robots: { index: false, follow: true },
   alternates: { canonical: absoluteUrl("/blog") },
 };
 

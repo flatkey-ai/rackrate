@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PriceExplorer } from "@/components/price-explorer";
-import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, offers, providers, regions } from "@/lib/data";
+import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, isRegionIndexable, offers, providers, regions } from "@/lib/data";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
@@ -106,7 +106,7 @@ export default function Home() {
           <div className="section-heading-aside"><p>Compare regional price signals without losing the latency, data movement, and availability questions behind them.</p><Link href="/regions">Explore every region →</Link></div>
         </div>
         <div className="home-region-grid">
-          {regions.map((region) => {
+          {regions.filter((region) => isRegionIndexable(region.slug)).map((region) => {
             const regionOffers = getOffersForRegion(region.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
             return <Link href={`/regions/${region.slug}`} key={region.slug}><span>{region.label}</span><strong>{region.name}</strong><small>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"} · from {regionOffers[0] ? money.format(regionOffers[0].pricePerGpuHour) : "—"}/hr</small><i>↗</i></Link>;
           })}

@@ -55,6 +55,8 @@ export type RegionProfile = {
   regionNames: string[];
   summary: string;
   bestFor: string;
+  marketContext: string;
+  buyingQuestions: [string, string, string];
   planningNotes: [string, string, string];
 };
 
@@ -228,6 +230,12 @@ export const regions: RegionProfile[] = [
     regionNames: ["Canada"],
     summary: "Compare sample GPU cloud rates published for Canadian capacity, including Hopper and Ampere accelerators.",
     bestFor: "Teams that want a Canadian deployment location and a direct view of locally listed accelerator options.",
+    marketContext: "Canada can be a useful shortlist for teams that want data and users to remain in-country, but RackRate currently has only a narrow reference observation for this market. Treat the page as a procurement checklist until more providers expose verifiable Canadian price and inventory data.",
+    buyingQuestions: [
+      "Which Canadian datacenter and availability zone will host the GPUs?",
+      "Is the quoted rate a firm on-demand price or a manually observed reference price?",
+      "Can the provider replace or scale the same GPU configuration without moving the workload abroad?",
+    ],
     planningNotes: [
       "Confirm the exact datacenter location rather than treating a country-level label as a latency guarantee.",
       "Ask whether public bandwidth, storage, and support are included in the advertised accelerator rate.",
@@ -242,6 +250,12 @@ export const regions: RegionProfile[] = [
     regionNames: ["United States", "US East"],
     summary: "Review sample US GPU rental offers across marketplace, specialist-cloud, and hyperscaler purchasing models.",
     bestFor: "Buyers comparing broad provider choice, flexible procurement models, and proximity to US-based data or users.",
+    marketContext: "The United States has the broadest mix in the current dataset: marketplace listings, specialist GPU clouds, and hyperscaler capacity. That range improves discovery but makes like-for-like comparison harder, because spot, on-demand, and host-specific offers carry different interruption and support assumptions.",
+    buyingQuestions: [
+      "Which cloud region and facility are included in the published rate?",
+      "Does the workload tolerate spot interruption or marketplace host replacement?",
+      "What egress and cross-zone charges apply to training data and checkpoints?",
+    ],
     planningNotes: [
       "Cloud regions within the United States can have materially different inventory, latency, and egress policies.",
       "Spot and marketplace listings should be evaluated separately from stable on-demand capacity.",
@@ -256,6 +270,12 @@ export const regions: RegionProfile[] = [
     regionNames: ["Europe", "Finland"],
     summary: "Compare sample European GPU capacity, from flexible single-GPU listings to reserved high-memory accelerators.",
     bestFor: "Workloads that benefit from a European deployment footprint or need to shortlist region-specific infrastructure.",
+    marketContext: "European listings in the current feed mix broad marketplace labels with named-country specialist capacity. Buyers should resolve the actual facility before using the price for latency, data-residency, renewable-energy, or contractual decisions.",
+    buyingQuestions: [
+      "Which country and legal entity will process and store the workload data?",
+      "Does a reserved rate require a deposit, minimum term, or minimum GPU count?",
+      "Are internet egress and cross-region transfers included in the comparison?",
+    ],
     planningNotes: [
       "A generic Europe label may span several countries; request the physical location before assessing latency or policy needs.",
       "Reserved pricing can carry term, deposit, or minimum-quantity conditions that are not visible in the hourly rate.",
@@ -270,6 +290,12 @@ export const regions: RegionProfile[] = [
     regionNames: ["India"],
     summary: "Inspect the sample GPU capacity currently indexed for India and compare its normalized per-GPU cost.",
     bestFor: "Teams prioritizing an India deployment footprint or testing regional capacity close to South Asian users and data.",
+    marketContext: "India is still a discovery market in the current RackRate dataset. One marketplace observation can reveal that capacity exists, but it cannot establish a dependable regional price floor or the supply needed for production scale-out.",
+    buyingQuestions: [
+      "Can the provider confirm the physical Indian location and network path?",
+      "Is matching replacement capacity available if the listed host disappears?",
+      "What support, tax, storage, and data-transfer charges sit outside the GPU rate?",
+    ],
     planningNotes: [
       "A single listing is a market signal, not proof of durable regional supply; confirm replacement capacity and lead time.",
       "Multi-GPU nodes should be compared on total node cost as well as the normalized per-GPU figure.",
@@ -284,6 +310,12 @@ export const regions: RegionProfile[] = [
     regionNames: ["Global"],
     summary: "Compare globally labeled GPU listings when flexibility and accelerator choice matter more than a fixed location.",
     bestFor: "Portable inference, experiments, and batch workloads that can choose capacity based on price and availability.",
+    marketContext: "Global is a provider catalogue label, not a physical deployment region. It is useful for price discovery and portable workloads, but a serious shortlist must resolve the final country, facility, network path, and governing terms before deployment.",
+    buyingQuestions: [
+      "Which concrete regions are available for this GPU and rate today?",
+      "Will the price or configuration change after selecting a datacenter?",
+      "Can regulated data and checkpoints move to the eventual host location?",
+    ],
     planningNotes: [
       "Treat global as a discovery label; obtain the actual host region before moving regulated or latency-sensitive data.",
       "Check whether availability and pricing vary after selecting a concrete datacenter or host.",
@@ -304,6 +336,19 @@ export const getOffersForRegion = (slug: string) => {
     (offer) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region),
   );
 };
+export function getRegionCoverage(slug: string) {
+  const regionOffers = getOffersForRegion(slug);
+  const officialCount = regionOffers.filter((offer) => offer.dataStatus === "official-page").length;
+  return {
+    offerCount: regionOffers.length,
+    officialCount,
+    referenceCount: regionOffers.length - officialCount,
+  };
+}
+export function isRegionIndexable(slug: string) {
+  const coverage = getRegionCoverage(slug);
+  return coverage.offerCount >= 3 && coverage.officialCount >= 1;
+}
 export const getRegionForOffer = (offer: Offer) =>
   regions.find(
     (region) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region),

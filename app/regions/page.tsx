@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getGpu, getOffersForRegion, getProvider, regions } from "@/lib/data";
+import { getGpu, getOffersForRegion, getProvider, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
 import { absoluteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
@@ -52,6 +52,8 @@ export default function RegionsIndexPage() {
             const providerCount = new Set(regionOffers.map((offer) => offer.providerSlug)).size;
             const cheapestGpu = floor ? getGpu(floor.gpuSlug) : undefined;
             const cheapestProvider = floor ? getProvider(floor.providerSlug) : undefined;
+            const coverage = getRegionCoverage(region.slug);
+            const indexable = isRegionIndexable(region.slug);
             return (
               <Link className="region-card" href={`/regions/${region.slug}`} key={region.slug}>
                 <div className="region-card-index">{String(index + 1).padStart(2, "0")}</div>
@@ -60,8 +62,9 @@ export default function RegionsIndexPage() {
                   <span>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"}</span>
                   <span>{gpuCount} GPU{gpuCount === 1 ? "" : "s"}</span>
                   <span>{providerCount} provider{providerCount === 1 ? "" : "s"}</span>
+                  <span>{coverage.officialCount} verified · {coverage.referenceCount} reference</span>
                 </div>
-                <div className="region-card-floor"><span>Sample floor</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>{cheapestGpu?.shortName || "No GPU"} · {cheapestProvider?.name || "No provider"}</small></div>
+                <div className="region-card-floor"><span>{indexable ? "Comparable sample floor" : "Limited research note"}</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>{cheapestGpu?.shortName || "No GPU"} · {cheapestProvider?.name || "No provider"}</small></div>
                 <span className="region-card-arrow">↗</span>
               </Link>
             );

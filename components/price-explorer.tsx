@@ -121,6 +121,11 @@ export function PriceExplorer() {
         </div>
       </div>
 
+      <div className="source-legend" aria-label="Price source labels">
+        <div><strong>Verified official price</strong><span>Collected from a provider-owned public pricing page and checked by the latest successful collector run.</span></div>
+        <div><strong>Reference price</strong><span>A dated public observation kept for market context; verify it directly before budgeting or procurement.</span></div>
+      </div>
+
       <div className="table-scroll-hint" aria-hidden="true"><span>Swipe to compare all columns</span><i>→</i></div>
       <div className="price-table-wrap" tabIndex={0} role="region" aria-label="Scrollable GPU price comparison table">
         <table className="price-table">
@@ -145,7 +150,7 @@ export function PriceExplorer() {
                     <Link className="provider-link" href={`/providers/${provider.slug}`}>{provider.name}</Link>
                     <span className="offer-evidence">
                       <a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">
-                        {offer.dataStatus === "official-page" ? "Official source" : "Baseline source"} ↗
+                        {offer.dataStatus === "official-page" ? "Verified official price" : "Reference price"} ↗
                       </a>
                       <span aria-hidden="true">·</span>
                       <time dateTime={offer.observedAt}>{observedDate.format(new Date(offer.observedAt))}</time>
