@@ -220,6 +220,7 @@ export const seedOffers: Omit<Offer, "sourceCurrency" | "billingUnit" | "dataSta
 
 export const offers = offerDataset.offers as Offer[];
 export const offerDatasetGeneratedAt = offerDataset.generatedAt;
+export const offerDatasetSources = offerDataset.sources;
 
 export const regions: RegionProfile[] = [
   {

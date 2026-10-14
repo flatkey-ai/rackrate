@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { gpus, offers, offerDatasetGeneratedAt, providers, type Availability, type RentalType } from "@/lib/data";
+import { gpus, offers, offerDatasetGeneratedAt, offerDatasetSources, providers, type Availability, type RentalType } from "@/lib/data";
 import { flatkeyComputeUrl } from "@/lib/site";
+import { trackSiteEvent } from "@/components/site-analytics";
 
 const availabilityLabel: Record<Availability, string> = {
   available: "Available",
@@ -29,6 +30,10 @@ const observedDate = new Intl.DateTimeFormat("en", {
   dateStyle: "medium",
   timeZone: "UTC",
 });
+
+const datasetAgeHours = Math.max(0, (Date.now() - new Date(offerDatasetGeneratedAt).getTime()) / 3_600_000);
+const datasetIsFresh = datasetAgeHours <= 18;
+const automatedSourceCount = offerDatasetSources.filter((source) => source.status === "ok").length;
 
 export function PriceExplorer() {
   const [query, setQuery] = useState("");
@@ -75,7 +80,7 @@ export function PriceExplorer() {
           <span className="eyebrow">Market scanner / sourced feed</span>
           <h2>Find capacity without opening thirty tabs.</h2>
         </div>
-        <div className="freshness"><span /> Dataset refreshed {freshness} UTC</div>
+        <div className={`freshness ${datasetIsFresh ? "" : "delayed"}`}><span /> {datasetIsFresh ? "Fresh source snapshot" : "Refresh delayed — verify sources"} · {freshness} UTC</div>
       </div>
 
       <div className="filter-bar">
@@ -86,14 +91,14 @@ export function PriceExplorer() {
         </label>
         <label>
           <span className="filter-label">GPU</span>
-          <select value={gpu} onChange={(event) => setGpu(event.target.value)}>
+          <select value={gpu} onChange={(event) => { setGpu(event.target.value); trackSiteEvent("price_filter_changed", { filter: "gpu", value: event.target.value }); }}>
             <option value="all">All GPUs</option>
             {gpus.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.shortName}</option>)}
           </select>
         </label>
         <label>
           <span className="filter-label">Rental</span>
-          <select value={rental} onChange={(event) => setRental(event.target.value as "all" | RentalType)}>
+          <select value={rental} onChange={(event) => { setRental(event.target.value as "all" | RentalType); trackSiteEvent("price_filter_changed", { filter: "rental", value: event.target.value }); }}>
             <option value="all">All types</option>
             <option value="On-demand">On-demand</option>
             <option value="Spot">Spot</option>
@@ -102,7 +107,7 @@ export function PriceExplorer() {
         </label>
         <label>
           <span className="filter-label">Region</span>
-          <select value={region} onChange={(event) => setRegion(event.target.value)}>
+          <select value={region} onChange={(event) => { setRegion(event.target.value); trackSiteEvent("price_filter_changed", { filter: "region", value: event.target.value }); }}>
             <option value="all">All regions</option>
             {regions.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
           </select>
@@ -169,8 +174,8 @@ export function PriceExplorer() {
         {filtered.length === 0 && <div className="empty-state"><strong>No exact match.</strong><span>Clear a filter or try a broader region.</span></div>}
       </div>
       <div className="table-footnote">
-        <span>Prices are normalized to USD per GPU-hour.</span>
-        <Link href="/methodology">How comparison works →</Link>
+        <span>Prices are normalized to USD per GPU-hour · {automatedSourceCount} automated official sources.</span>
+        <div><Link href="/methodology">How comparison works →</Link><a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report a data issue ↗</a></div>
       </div>
       {filtered.length > 0 && (
         <div className="explorer-conversion">

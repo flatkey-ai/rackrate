@@ -1,5 +1,13 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
 
+.analytics-consent { position: fixed; z-index: 60; right: 20px; bottom: 20px; width: min(440px, calc(100vw - 40px)); padding: 16px; border: 1px solid var(--ink, #111511); background: var(--paper, #f3f1e9); color: var(--ink, #111511); box-shadow: 8px 8px 0 rgba(17, 21, 17, .18); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.analytics-consent p { margin: 0; display: grid; gap: 4px; font-size: 12px; line-height: 1.4; }
+.analytics-consent p strong { font-size: 13px; }
+.analytics-consent div { display: flex; gap: 8px; flex: 0 0 auto; }
+.analytics-consent button { min-height: 36px; padding: 0 12px; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.analytics-consent .consent-accept { background: var(--ink, #111511); color: var(--paper, #f3f1e9); }
+@media (max-width: 640px) { .analytics-consent { align-items: stretch; flex-direction: column; } .analytics-consent div { justify-content: flex-end; } }
+
 :root {
   --ink: #111511;
   --paper: #f3f1e9;
@@ -95,6 +103,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .explorer-head h2 { margin: 0; font-size: clamp(27px, 3vw, 42px); line-height: 1; letter-spacing: -.055em; }
 .freshness { font-family: var(--font-mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
 .freshness span { display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: #2cb466; }
+.freshness.delayed { color: #9a4d2f; }
+.freshness.delayed span { background: var(--orange); }
 .filter-bar { display: grid; grid-template-columns: 1.7fr repeat(3, 1fr); border-bottom: 1px solid var(--line); }
 .filter-bar > label { position: relative; min-width: 0; border-right: 1px solid var(--line); }
 .filter-bar > label:last-child { border-right: 0; }
@@ -786,3 +796,4 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .blog-article-layout aside { position: static; }
   .blog-article-next { align-items: stretch; flex-direction: column; }
 }
+.table-footnote > div { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 16px; }

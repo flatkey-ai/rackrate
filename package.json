@@ -12,6 +12,7 @@
     "start": "next start",
     "test": "node --test scripts/*.test.mjs",
     "data:refresh": "node scripts/refresh-prices.mjs",
+    "seo:audit": "node scripts/seo-audit.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
