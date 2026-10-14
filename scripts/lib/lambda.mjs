@@ -62,5 +62,5 @@ export async function collectLambda(fetchImpl = fetch) {
   });
   if (!response.ok) throw new Error(`Lambda returned HTTP ${response.status}`);
   const observedAt = new Date().toISOString();
-  return { offers: parseLambdaPricing(await response.text(), observedAt), observedAt, url: LAMBDA_URL };
+  return { provider: "lambda", offers: parseLambdaPricing(await response.text(), observedAt), observedAt, url: LAMBDA_URL };
 }

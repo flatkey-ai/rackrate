@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const gpu = getGpu((await params).slug);
   if (!gpu) return {};
   const title = `${gpu.shortName} GPU rental prices per hour`;
-  const description = `Compare sample ${gpu.name} rental prices per hour, cloud providers, regions, node configurations, and availability.`;
+  const description = `Compare sourced ${gpu.name} rental prices per hour, cloud providers, regions, node configurations, and availability.`;
   return {
     title,
     description,
@@ -36,6 +36,15 @@ export default async function GpuPage({ params }: PageProps) {
     : prices.length % 2 === 0
       ? (prices[midpoint - 1] + prices[midpoint]) / 2
       : prices[midpoint];
+  const verifiedCount = listings.filter((offer) => offer.dataStatus === "official-page").length;
+  const referenceCount = listings.length - verifiedCount;
+  const newestObservation = listings
+    .map((offer) => Date.parse(offer.observedAt))
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0];
+  const checkedAt = newestObservation
+    ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(newestObservation))
+    : "Not yet observed";
 
   return (
     <main className="detail-main">
@@ -50,7 +59,7 @@ export default async function GpuPage({ params }: PageProps) {
           <div className="detail-price-block">
             <span>Lowest observed rate</span>
             <strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong>
-            <small>per GPU / hour · sample feed</small>
+            <small>per GPU / hour · sourced snapshot</small>
             <a className="detail-flatkey-cta" href={flatkeyComputeUrl(`${gpu.slug}_profile`, "gpu_detail")} target="_blank" rel="sponsored nofollow noreferrer">View {gpu.shortName} on Flatkey Compute <span>↗</span></a>
           </div>
         </div>
@@ -63,7 +72,7 @@ export default async function GpuPage({ params }: PageProps) {
       </section>
 
       <section className="detail-content shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Price board</span><h2>{listings.length} configurations tracked</h2></div><p>Median sample rate: <strong>{money.format(median)}</strong> per GPU-hour.</p></div>
+        <div className="detail-section-heading"><div><span className="eyebrow">Price board</span><h2>{listings.length} configurations tracked</h2></div><p>Median tracked rate: <strong>{money.format(median)}</strong> per GPU-hour.</p></div>
         <div className="offer-stack">
           {listings.map((offer, index) => {
             const provider = getProvider(offer.providerSlug)!;
@@ -79,7 +88,7 @@ export default async function GpuPage({ params }: PageProps) {
             );
           })}
         </div>
-        <aside className="data-notice"><strong>Launch dataset</strong><p>These rates are representative seed data used to validate the product experience. Production collectors will attach refresh status, raw currency, and the exact provider source to every row.</p><Link href="/methodology">Review the data contract →</Link></aside>
+        <aside className="data-notice"><strong>Source-backed snapshot</strong><p>{verifiedCount} price{verifiedCount === 1 ? "" : "s"} on this page come from automated official-source collectors; {referenceCount} dated reference record{referenceCount === 1 ? "" : "s"} still require provider confirmation. Latest observation: {checkedAt}.</p><Link href="/methodology">Review collection rules and limits →</Link></aside>
         <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Buying guide</span><strong>How to compare GPU rental prices →</strong></Link><Link href="/regions"><span>Location index</span><strong>Compare GPU cloud regions →</strong></Link></div>
       </section>
     </main>

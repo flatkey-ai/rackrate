@@ -87,7 +87,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <Link href="/guides/gpu-rental-pricing">GPU pricing guide</Link>
               <Link href="/methodology">Methodology</Link>
               <Link href="/gpus">Browse GPU profiles</Link>
-              <span>Sample data for launch preview</span>
+              <span>Source-backed prices refreshed every six hours</span>
             </div>
           </div>
           <div className="shell footer-bottom">

@@ -51,5 +51,5 @@ export async function collectRunpod(fetchImpl = fetch) {
   });
   if (!response.ok) throw new Error(`RunPod returned HTTP ${response.status}`);
   const observedAt = new Date().toISOString();
-  return { offers: parseRunpodPricing(await response.text(), observedAt), observedAt, url: RUNPOD_URL };
+  return { provider: "runpod", offers: parseRunpodPricing(await response.text(), observedAt), observedAt, url: RUNPOD_URL };
 }

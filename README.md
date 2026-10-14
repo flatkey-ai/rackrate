@@ -12,7 +12,9 @@ Independent cloud GPU price-comparison site. The launch UI is branded **RackRate
 - Versioned dataset with source links, observation dates, and a fail-closed official-page collector
 - High-intent CTAs routed to Flatkey Compute with per-page UTM attribution
 
-RunPod, Hyperstack, Nebius, and Lambda prices are refreshed from their official pricing pages every six hours. Vast.ai and AWS records remain clearly labeled seed observations until authenticated or region-complete collectors are implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
+RunPod, Hyperstack, Nebius, and Lambda prices are refreshed from their official pricing pages every six hours. Vast.ai refreshes through its official search API when the `VAST_API_KEY` GitHub Actions secret is present; without it, dated Vast.ai records remain references. AWS remains a reference until a read-only identity with `pricing:GetProducts` is configured and region-complete validation is implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
+
+Each successful refresh also appends a compact snapshot to `data/price-history.json`. The archive retains 180 days of normalized hourly price, availability, and source-status values so future trend pages can be built from auditable data rather than reconstructed estimates.
 
 ## Local development
 
