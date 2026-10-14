@@ -1,47 +1,71 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const consentKey = "flatkey_analytics_consent";
-const identityKey = "rackrate_analytics_id";
-const token = process.env.NEXT_PUBLIC_MIXPANEL_TOKEN || "cf2f149bd61f607c3fd578596ad86921";
+const measurementId = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID || "";
 
 type EventProperties = Record<string, boolean | number | string | undefined>;
 
-function analyticsAllowed() {
-  return typeof window !== "undefined" && window.localStorage.getItem(consentKey) === "granted";
+declare global {
+  interface Window {
+    dataLayer?: unknown[];
+    gtag?: (...args: unknown[]) => void;
+  }
 }
 
-function getDistinctId() {
-  const current = window.localStorage.getItem(identityKey);
-  if (current) return current;
-  const created = window.crypto.randomUUID();
-  window.localStorage.setItem(identityKey, created);
-  return created;
+function analyticsAllowed() {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem(consentKey) === "granted";
+  } catch {
+    return false;
+  }
+}
+
+function initializeGa4() {
+  if (!analyticsAllowed() || !/^G-[A-Z0-9]+$/.test(measurementId)) return false;
+  if (document.getElementById("rackrate-ga4")) return true;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer!.push(arguments); };
+  window.gtag("consent", "default", {
+    analytics_storage: "granted",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
+  });
+  window.gtag("js", new Date());
+  window.gtag("config", measurementId, {
+    send_page_view: false,
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+  });
+  const script = document.createElement("script");
+  script.id = "rackrate-ga4";
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+  document.head.appendChild(script);
+  return true;
 }
 
 export function trackSiteEvent(event: string, properties: EventProperties = {}) {
-  if (!analyticsAllowed()) return;
-  const payload = [{
-    event,
-    properties: {
-      token,
-      distinct_id: getDistinctId(),
-      source_site: "rackrate",
-      path: window.location.pathname,
-      url: window.location.href,
-      referrer: document.referrer || undefined,
-      time: Math.floor(Date.now() / 1000),
-      ...properties,
-    },
-  }];
-  void fetch("https://api-js.mixpanel.com/track/?verbose=0", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    keepalive: true,
-  }).catch(() => undefined);
+  if (!initializeGa4()) return;
+  const page = new URL(window.location.href);
+  const campaignKeys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+  for (const key of [...page.searchParams.keys()]) {
+    if (!campaignKeys.includes(key)) page.searchParams.delete(key);
+  }
+  page.hash = "";
+  let referrer = "";
+  try { const url = new URL(document.referrer); referrer = url.origin + url.pathname; } catch {}
+  window.gtag?.("event", event === "page_viewed" ? "page_view" : event, {
+    ...properties,
+    send_to: measurementId,
+    source_site: "rackrate",
+    page_location: page.toString(),
+    page_referrer: referrer,
+    page_title: document.title,
+  });
 }
 
 function classifyLink(anchor: HTMLAnchorElement) {
@@ -54,15 +78,19 @@ function classifyLink(anchor: HTMLAnchorElement) {
 
 export function SiteAnalytics() {
   const pathname = usePathname();
+  const lastPageView = useRef<string | null>(null);
   const [consent, setConsent] = useState<"denied" | "granted" | "unknown">("unknown");
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(consentKey);
+    let stored: string | null = null;
+    try { stored = window.localStorage.getItem(consentKey); window.localStorage.removeItem("rackrate_analytics_id"); } catch {}
     setConsent(stored === "granted" || stored === "denied" ? stored : "unknown");
   }, []);
 
   useEffect(() => {
-    if (consent === "granted") trackSiteEvent("page_viewed", { page_path: pathname });
+    if (consent !== "granted" || lastPageView.current === pathname) return;
+    trackSiteEvent("page_viewed", { page_path: pathname });
+    lastPageView.current = pathname;
   }, [consent, pathname]);
 
   useEffect(() => {
@@ -87,7 +115,7 @@ export function SiteAnalytics() {
 
   return (
     <aside className="analytics-consent" aria-label="Analytics preference">
-      <p><strong>Help improve RackRate</strong><span>Allow anonymous usage analytics. No account or search text is collected.</span></p>
+      <p><strong>Help improve RackRate</strong><span>Allow Google Analytics to measure visits and interactions. We do not send account details or search text.</span></p>
       <div>
         <button type="button" onClick={() => { window.localStorage.setItem(consentKey, "denied"); setConsent("denied"); }}>Decline</button>
         <button type="button" className="consent-accept" onClick={() => { window.localStorage.setItem(consentKey, "granted"); setConsent("granted"); }}>Allow analytics</button>

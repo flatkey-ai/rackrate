@@ -63,3 +63,7 @@ See [DATA.md](DATA.md) for the freshness, normalization, and failure policy.
 ## License
 
 MIT
+
+## Analytics
+
+RackRate uses GA4 only. Set `NEXT_PUBLIC_GA4_MEASUREMENT_ID` to the web stream ID (`G-...`) before building; Next.js embeds public environment variables at build time. Analytics is loaded only after the visitor grants analytics consent. Events include `page_view`, `price_filter_changed`, `flatkey_console_clicked`, `flatkey_website_clicked`, and `external_source_clicked`. No Mixpanel requests are sent. Page URLs retain campaign parameters but exclude search text and other query parameters. Enhanced Measurement is disabled for this stream; the application sends page views, filter changes, and external-link events itself. Measurement ID: `G-PP87NKBGK5`.
