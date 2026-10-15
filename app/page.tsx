@@ -15,31 +15,33 @@ export default function Home() {
       <section className="hero">
         <div className="hero-grid shell">
           <div className="hero-copy">
-            <div className="hero-kicker"><span>GPU market intelligence</span><i />Labeled launch sample</div>
+            <div className="hero-kicker"><span>GPU market intelligence</span><i />Source-linked pricing</div>
             <h1>The price of compute,<br /><em>made comparable.</em></h1>
-            <p>Compare sample GPU rental prices per hour across providers, regions, and purchase models. Review the listed configuration context before you shortlist a cloud.</p>
+            <p>Compare GPU rental prices by model, region and purchase terms. Use the market as a benchmark, then ask Flatkey for a configuration and quote matched to your workload.</p>
             <div className="hero-actions">
               <a className="button button-primary" href={flatkeyWebsiteUrl("home_hero")} target="_blank" rel="sponsored nofollow noreferrer">Explore Flatkey GPU Cloud <span>↗</span></a>
               <Link className="button button-secondary" href="#prices">Compare GPU prices <span>↓</span></Link>
             </div>
           </div>
-          <div className="market-terminal" aria-label="Sample GPU market snapshot">
-            <div className="terminal-top"><span>MARKET / ON-DEMAND</span><span className="terminal-live"><i /> SAMPLE</span></div>
+          <div className="market-terminal" aria-label="Observed GPU pricing snapshot">
+            <div className="terminal-top"><span>MARKET / OBSERVED RATES</span><span className="terminal-live"><i /> SOURCED</span></div>
             <div className="terminal-focus">
               <div>
-                <span>Lowest sample rate</span>
+                <span>Lowest indexed rate</span>
                 <strong>H100</strong>
               </div>
               <div className="terminal-price"><strong>{money.format(h100.pricePerGpuHour)}</strong><span>/ GPU / HR</span></div>
             </div>
-            <div className="sparkline" aria-hidden="true">
-              <svg viewBox="0 0 540 110" preserveAspectRatio="none"><path className="area" d="M0 88 L45 72 L90 80 L135 54 L180 59 L225 42 L270 48 L315 26 L360 34 L405 22 L450 31 L495 17 L540 20 L540 110 L0 110Z" /><path className="line" d="M0 88 L45 72 L90 80 L135 54 L180 59 L225 42 L270 48 L315 26 L360 34 L405 22 L450 31 L495 17 L540 20" /></svg>
-              <span className="spark-label start">Illustrative only</span><span className="spark-label end">Not historical</span>
+            <div className="terminal-evidence">
+              <span>{providers.find((provider) => provider.slug === h100.providerSlug)?.name} · {h100.region} · {h100.rentalType}</span>
+              <p>{h100.gpuCount}× GPU node · {money.format(h100.pricePerGpuHour * h100.gpuCount)}/hr total</p>
+              <a href={h100.sourceUrl} target="_blank" rel="nofollow noreferrer">{h100.dataStatus === "official-page" ? "Official-source price" : "Dated reference price"} ↗</a>
+              <small>Observed {h100.observedAt.slice(0, 10)} · Confirm current price and capacity with the provider.</small>
             </div>
             <div className="terminal-stats">
-              <div><span>A100 80GB</span><strong>{money.format(a100.pricePerGpuHour)}</strong><small>floor</small></div>
-              <div><span>L40S</span><strong>{money.format(l40s.pricePerGpuHour)}</strong><small>floor</small></div>
-              <div><span>Configurations</span><strong>{offers.length}</strong><small>sample feed</small></div>
+              <div><span>A100 80GB</span><strong>{money.format(a100.pricePerGpuHour)}</strong><small>lowest indexed</small></div>
+              <div><span>L40S</span><strong>{money.format(l40s.pricePerGpuHour)}</strong><small>lowest indexed</small></div>
+              <div><span>Configurations</span><strong>{offers.length}</strong><small>indexed offers</small></div>
             </div>
           </div>
         </div>
@@ -78,7 +80,7 @@ export default function Home() {
       <section className="providers-section" id="providers">
         <div className="shell">
           <div className="section-heading split-heading inverse">
-            <div><span className="eyebrow">Provider index</span><h2>Know who owns the capacity.</h2></div>
+            <div><span className="eyebrow">Provider index</span><h2>Know who provides the capacity.</h2></div>
             <div className="section-heading-aside"><p>Marketplace, specialist cloud, or hyperscaler—the operating model matters almost as much as the sticker price.</p><Link href="/providers">Compare all providers →</Link></div>
           </div>
           <div className="provider-list">
@@ -90,14 +92,27 @@ export default function Home() {
                   <span className="provider-index">{String(index + 1).padStart(2, "0")}</span>
                   <span className="provider-name">{provider.name}<small>{provider.type}</small></span>
                   <span className="provider-hq">{provider.hq}</span>
-                  <span className="provider-count">{providerOffers.length} configuration{providerOffers.length === 1 ? "" : "s"}</span>
-                  <span className="provider-floor">from <strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong></span>
+                  <span className="provider-count">{provider.slug === "flatkey" ? "Workload-based quotes" : `${providerOffers.length} configuration${providerOffers.length === 1 ? "" : "s"}`}</span>
+                  <span className="provider-floor">{floor ? <>from <strong>{money.format(floor.pricePerGpuHour)}</strong></> : <strong>Request quote</strong>}</span>
                   <span className="provider-arrow">↗</span>
                 </Link>
               );
             })}
           </div>
         </div>
+      </section>
+
+      <section className="flatkey-overview shell">
+        <div className="section-heading split-heading">
+          <div><span className="eyebrow">Flatkey Compute</span><h2>From a price benchmark to a deployment plan.</h2></div>
+          <div className="section-heading-aside"><p>A useful quote connects the GPU rate to the workload, location and time you need. Flatkey offers a request-based path to scope those details together.</p><Link href="/providers/flatkey">Explore Flatkey Compute →</Link></div>
+        </div>
+        <div className="principle-grid">
+          <article><span>01</span><h3>Workload-based matching</h3><p>Describe the model, GPU count and operating requirements so the proposed configuration can be checked against the job.</p></article>
+          <article><span>02</span><h3>A quote with context</h3><p>Confirm the price alongside the region, configuration, delivery conditions and validity period.</p></article>
+          <article><span>03</span><h3>Terms for the project</h3><p>Discuss flexible, reserved or dedicated capacity requests according to duration and deployment requirements.</p></article>
+        </div>
+        <p className="partner-note">Based on <a href={flatkeyWebsiteUrl("home_service_source")} target="_blank" rel="sponsored nofollow noreferrer">Flatkey’s service overview ↗</a>. Flatkey is RackRate’s commercial partner. Availability and terms are confirmed per quote.</p>
       </section>
 
       <section className="home-regions shell">
@@ -123,9 +138,9 @@ export default function Home() {
       <section className="principles shell">
         <div className="principle-lead"><span className="eyebrow">Built for scrutiny</span><h2>A cheap number is useless without context.</h2></div>
         <div className="principle-grid">
-          <article><span>01</span><h3>Source-linked</h3><p>Every sample offer carries a provider or pricing-page link for follow-up verification.</p></article>
-          <article><span>02</span><h3>Normalized</h3><p>Sample rates are shown in USD per GPU-hour while preserving total-node cost and purchase type.</p></article>
-          <article><span>03</span><h3>Status-labeled</h3><p>Availability labels remain visible, but launch samples are never presented as live inventory.</p></article>
+          <article><span>01</span><h3>Source-linked</h3><p>Every indexed offer carries a provider or pricing-page link for follow-up verification.</p></article>
+          <article><span>02</span><h3>Normalized</h3><p>Observed rates are shown in USD per GPU-hour while preserving total-node cost and purchase type.</p></article>
+          <article><span>03</span><h3>Status-labeled</h3><p>Observation dates and source labels stay visible. A published price does not guarantee current inventory.</p></article>
         </div>
       </section>
     </main>

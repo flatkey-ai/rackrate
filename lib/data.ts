@@ -143,6 +143,15 @@ export const gpus: Gpu[] = [
 
 export const providers: Provider[] = [
   {
+    slug: "flatkey",
+    name: "Flatkey",
+    type: "GPU cloud",
+    hq: "United States",
+    billing: "By quote",
+    summary: "GPU capacity matched to your workload, with configuration, region, price and delivery conditions confirmed in a formal quote.",
+    website: "https://flatkey.ai/compute",
+  },
+  {
     slug: "vast-ai",
     name: "Vast.ai",
     type: "Marketplace",
@@ -209,9 +218,9 @@ export const regions: RegionProfile[] = [
     label: "Canadian GPU cloud",
     countryCodes: ["CA"],
     regionNames: ["Canada"],
-    summary: "Compare sample GPU cloud rates published for Canadian capacity, including Hopper and Ampere accelerators.",
-    bestFor: "Teams that want a Canadian deployment location and a direct view of locally listed accelerator options.",
-    marketContext: "Canada can be a useful shortlist for teams that want data and users to remain in-country, but RackRate currently has only a narrow reference observation for this market. Treat the page as a procurement checklist until more providers expose verifiable Canadian price and inventory data.",
+    summary: "Plan a Canadian GPU deployment: review location, replacement capacity and quote requirements. Pricing coverage is shown below when records are available.",
+    bestFor: "Teams that require a Canadian deployment location and need to confirm facility, capacity and procurement terms.",
+    marketContext: "Canada can be a useful shortlist for teams that want data and users to remain in-country, but RackRate has limited pricing coverage for this market. Treat the page as a procurement checklist until more providers expose verifiable Canadian price and inventory data.",
     buyingQuestions: [
       "Which Canadian datacenter and availability zone will host the GPUs?",
       "Is the quoted rate a firm on-demand price or a manually observed reference price?",
@@ -220,7 +229,7 @@ export const regions: RegionProfile[] = [
     planningNotes: [
       "Confirm the exact datacenter location rather than treating a country-level label as a latency guarantee.",
       "Ask whether public bandwidth, storage, and support are included in the advertised accelerator rate.",
-      "Validate current capacity before designing a cluster around a low sample price.",
+      "Validate current capacity before designing a cluster around a low advertised price.",
     ],
   },
   {
@@ -229,7 +238,7 @@ export const regions: RegionProfile[] = [
     label: "US GPU cloud",
     countryCodes: ["US"],
     regionNames: ["United States", "US East"],
-    summary: "Review sample US GPU rental offers across marketplace, specialist-cloud, and hyperscaler purchasing models.",
+    summary: "Review indexed US GPU rental offers across marketplace, specialist-cloud, and hyperscaler purchasing models.",
     bestFor: "Buyers comparing broad provider choice, flexible procurement models, and proximity to US-based data or users.",
     marketContext: "The United States has the broadest mix in the current dataset: marketplace listings, specialist GPU clouds, and hyperscaler capacity. That range improves discovery but makes like-for-like comparison harder, because spot, on-demand, and host-specific offers carry different interruption and support assumptions.",
     buyingQuestions: [
@@ -249,9 +258,9 @@ export const regions: RegionProfile[] = [
     label: "European GPU cloud",
     countryCodes: ["EU", "FI"],
     regionNames: ["Europe", "Finland"],
-    summary: "Compare sample European GPU capacity, from flexible single-GPU listings to reserved high-memory accelerators.",
+    summary: "Compare indexed European GPU offers and check the country, purchase terms and data-transfer costs behind each rate.",
     bestFor: "Workloads that benefit from a European deployment footprint or need to shortlist region-specific infrastructure.",
-    marketContext: "European listings in the current feed mix broad marketplace labels with named-country specialist capacity. Buyers should resolve the actual facility before using the price for latency, data-residency, renewable-energy, or contractual decisions.",
+    marketContext: "European listings can use broad regional labels rather than a named facility. Buyers should resolve the actual country and datacenter before using the price for latency, data-residency, energy-source or contractual decisions.",
     buyingQuestions: [
       "Which country and legal entity will process and store the workload data?",
       "Does a reserved rate require a deposit, minimum term, or minimum GPU count?",
@@ -269,9 +278,9 @@ export const regions: RegionProfile[] = [
     label: "India GPU cloud",
     countryCodes: ["IN"],
     regionNames: ["India"],
-    summary: "Inspect the sample GPU capacity currently indexed for India and compare its normalized per-GPU cost.",
+    summary: "Review dated GPU price observations for India and the location and capacity questions to resolve before deployment.",
     bestFor: "Teams prioritizing an India deployment footprint or testing regional capacity close to South Asian users and data.",
-    marketContext: "India is still a discovery market in the current RackRate dataset. One marketplace observation can reveal that capacity exists, but it cannot establish a dependable regional price floor or the supply needed for production scale-out.",
+    marketContext: "RackRate has limited pricing coverage for India. A dated marketplace observation is a starting point for research; it cannot establish a dependable regional price floor or current supply for production scale-out.",
     buyingQuestions: [
       "Can the provider confirm the physical Indian location and network path?",
       "Is matching replacement capacity available if the listed host disappears?",
@@ -286,7 +295,7 @@ export const regions: RegionProfile[] = [
   {
     slug: "global",
     name: "Global listings",
-    label: "Global GPU marketplace",
+    label: "Global GPU listings",
     countryCodes: ["GL"],
     regionNames: ["Global"],
     summary: "Compare globally labeled GPU listings when flexibility and accelerator choice matter more than a fixed location.",

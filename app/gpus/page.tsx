@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCheapestOffer, getOffersForGpu, gpus, providers } from "@/lib/data";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -12,7 +12,7 @@ const money = new Intl.NumberFormat("en-US", {
 export const metadata: Metadata = {
   title: "GPU rental prices by model: H100, H200, A100 & more",
   description:
-    "Compare sample GPU rental prices per hour for NVIDIA H100, H200, B200, A100 80GB, L40S, and RTX 4090 cloud instances.",
+    "Compare sourced GPU rental prices per hour for NVIDIA H100, H200, B200, A100 80GB, L40S, and RTX 4090 cloud instances.",
   alternates: { canonical: absoluteUrl("/gpus") },
   openGraph: {
     title: "GPU rental prices by model",
@@ -25,7 +25,7 @@ const faqs = [
   {
     question: "How much does it cost to rent a GPU per hour?",
     answer:
-      "The hourly cost depends on the accelerator, node configuration, region, and purchase model. The sample offers in this preview range from budget single-GPU listings to multi-GPU datacenter nodes; use each model page for a normalized per-GPU comparison.",
+      "The hourly cost depends on the accelerator, node configuration, region, and purchase model. The indexed offers range from budget single-GPU listings to multi-GPU datacenter nodes; use each model page for a normalized per-GPU comparison.",
   },
   {
     question: "Should I compare per-GPU price or total node price?",
@@ -35,7 +35,7 @@ const faqs = [
   {
     question: "Do you list a B300 GPU price?",
     answer:
-      "Not yet. This preview has no verifiable B300 rental offer, so RackRate does not publish an estimated price. The model will be added when a source-backed listing is available.",
+      "Not yet. RackRate has no source-backed B300 rental price in its dataset, so RackRate does not publish an estimated price. The model will be added when a source-backed listing is available.",
   },
 ];
 
@@ -64,12 +64,12 @@ export default function GpusIndexPage() {
           <div>
             <span className="eyebrow">GPU rental price index</span>
             <h1>Compare GPU prices by model.</h1>
-            <p>Shortlist cloud accelerators by VRAM, architecture, published hourly rate, and available provider configurations. Every price below is a labeled sample, normalized to USD per physical GPU-hour.</p>
+            <p>Compare accelerators by memory, architecture and sourced hourly rates. Once you have a model in mind, ask Flatkey to match the GPU count, region and duration to your workload. Rates below are in USD per physical GPU-hour; check each record’s source and date.</p>
           </div>
           <div className="directory-summary">
             <div><span>Models tracked</span><strong>{gpus.length}</strong></div>
-            <div><span>Provider profiles</span><strong>{providers.length}</strong></div>
-            <div><span>Sample floor</span><strong>{money.format(marketFloor)}</strong><small>per GPU / hr</small></div>
+            <div><span>Providers profiled</span><strong>{providers.length}</strong></div>
+            <div><span>Lowest indexed rate</span><strong>{money.format(marketFloor)}</strong><small>per GPU / hr</small></div>
           </div>
         </div>
       </section>
@@ -92,7 +92,7 @@ export default function GpusIndexPage() {
                 <dl className="directory-facts">
                   <div><dt>Memory</dt><dd>{gpu.vramGb} GB {gpu.memoryType}</dd></div>
                   <div><dt>Architecture</dt><dd>{gpu.architecture}</dd></div>
-                  <div><dt>Sample listings</dt><dd>{gpuOffers.length} across {providerCount} provider{providerCount === 1 ? "" : "s"}</dd></div>
+                  <div><dt>Indexed listings</dt><dd>{gpuOffers.length} across {providerCount} provider{providerCount === 1 ? "" : "s"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">
                   <span>From <strong>{cheapest ? money.format(cheapest.pricePerGpuHour) : "—"}</strong>/hr</span>
@@ -128,8 +128,8 @@ export default function GpusIndexPage() {
           {faqs.map((faq) => <article key={faq.question}><h3>{faq.question}</h3><p>{faq.answer}</p></article>)}
         </div>
         <div className="conversion-band">
-          <div><span className="eyebrow">Need a stronger shortlist?</span><h2>Compare the complete GPU offer.</h2><p>Carry the node, region, purchase model, and hidden costs into the decision—not only the accelerator name.</p></div>
-          <Link className="button button-primary" href="/guides/gpu-rental-pricing">Use the buying guide <span>→</span></Link>
+          <div><span className="eyebrow">Your GPU shortlist</span><h2>Turn the model choice into a quote.</h2><p>Share the GPU model, quantity, region and duration with Flatkey. Use the indexed rates to evaluate the quoted configuration and total cost.</p></div>
+          <a className="button button-primary" href={flatkeyWebsiteUrl("gpu_directory_quote")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
         </div>
       </section>
     </main>

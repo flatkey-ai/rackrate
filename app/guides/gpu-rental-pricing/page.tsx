@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCheapestOffer } from "@/lib/data";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
@@ -84,7 +84,8 @@ export default function GpuRentalPricingGuide() {
         <article className="guide-article">
           <div className="guide-lede">
             <p><strong>GPU rental pricing is unusually easy to misread.</strong> Providers may quote a physical GPU, a fraction of a GPU, a complete multi-GPU server, a preemptible instance, or a monthly commitment. The same accelerator name can sit beside different CPUs, RAM, storage, networking, support, and regional availability.</p>
-            <p>RackRate keeps the original purchase model visible and normalizes sample listings to a per-physical-GPU hourly rate. You should still carry the total node rate and operational constraints into the final comparison.</p>
+            <p>Flatkey is RackRate’s commercial partner. Its service accepts workload-based capacity requests and confirms commercial terms in a formal quote. The guidance below applies the same comparison framework to Flatkey and other providers.</p>
+            <p>RackRate keeps the original purchase model visible and normalizes sourced listings to a per-physical-GPU hourly rate. You should still carry the total node rate and operational constraints into the final comparison.</p>
           </div>
 
           <section id="unit">
@@ -105,12 +106,12 @@ export default function GpuRentalPricingGuide() {
             <h2>Compare the GPU that fits, not every GPU on the market.</h2>
             <p>Filter by memory capacity and software compatibility before sorting by price. If weights, activations, KV cache, optimizer state, or batch size do not fit, the low hourly rate is irrelevant. If several accelerators fit, estimate time-to-result and expected utilization.</p>
             <div className="guide-model-links">
-              <Link href="/gpus/nvidia-h100"><span>Training and inference</span><strong>H100 GPU rental prices</strong><small>Sample floor {h100 ? money.format(h100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
+              <Link href="/gpus/nvidia-h100"><span>Training and inference</span><strong>H100 GPU rental prices</strong><small>Lowest indexed rate {h100 ? money.format(h100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
               <Link href="/gpus/nvidia-h200"><span>High-memory inference</span><strong>H200 GPU price comparison</strong><small>141 GB HBM3e →</small></Link>
-              <Link href="/gpus/nvidia-a100-80gb"><span>Mature cloud capacity</span><strong>A100 GPU rental prices</strong><small>Sample floor {a100 ? money.format(a100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
+              <Link href="/gpus/nvidia-a100-80gb"><span>Mature cloud capacity</span><strong>A100 GPU rental prices</strong><small>Lowest indexed rate {a100 ? money.format(a100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
               <Link href="/gpus/nvidia-b200"><span>Blackwell capacity</span><strong>NVIDIA B200 rental prices</strong><small>180 GB HBM3e →</small></Link>
             </div>
-            <div className="guide-note"><strong>Looking for B300?</strong><p>This launch dataset does not contain a verifiable B300 cloud rental offer. We would rather show no number than invent a future GPU price.</p></div>
+            <div className="guide-note"><strong>Looking for B300?</strong><p>RackRate does not yet have a source-backed B300 rental price. You can include B300 in a Flatkey capacity request, but availability and price must be confirmed in a formal quote.</p></div>
           </section>
 
           <section id="purchase">
@@ -134,7 +135,7 @@ export default function GpuRentalPricingGuide() {
               <li><strong>Networking and interconnect</strong><span>Training scale depends on topology and bandwidth; identical GPU counts do not imply identical cluster performance.</span></li>
               <li><strong>Engineering and reliability</strong><span>Image support, orchestration, observability, replacement capacity, and support response affect delivered cost.</span></li>
             </ul>
-            <p>Provider pages help surface these differences. Start with the indexed <Link href="/providers/vast-ai">Vast.ai GPU rental prices</Link> or <Link href="/providers/runpod">Runpod GPU rental prices</Link>, then verify current terms at the source.</p>
+            <p>Start with <Link href="/providers/flatkey">Flatkey’s quote-based GPU service</Link> to scope the configuration, region and delivery requirements. Use the <Link href="/providers">provider price profiles</Link> as market context, and compare the full quoted cost under equivalent terms.</p>
           </section>
 
           <section id="trend">
@@ -145,7 +146,7 @@ export default function GpuRentalPricingGuide() {
               <strong>Minimum fields for a price history</strong>
               <span>Observation time</span><span>Provider</span><span>Exact GPU</span><span>GPU count</span><span>Region</span><span>Rental type</span><span>Node specification</span><span>Availability</span>
             </div>
-            <p>The launch repository uses clearly labeled sample observations. It does not claim to measure a live decline, increase, or historical market average.</p>
+            <p>RackRate stores dated price snapshots, but does not yet publish a historical trend chart. Current observations alone do not establish a market-wide increase or decline.</p>
           </section>
 
           <section id="checklist">
@@ -159,8 +160,8 @@ export default function GpuRentalPricingGuide() {
               <li><span>05</span><p>Confirm capacity hold, replacement policy, interruption terms, and quote expiration.</p></li>
             </ol>
             <div className="guide-cta">
-              <div><span className="eyebrow">Put the framework to work</span><h2>Compare the sample price board.</h2><p>Apply the checklist to GPU, provider, region, configuration, and purchase-model records in one view.</p></div>
-              <Link className="button button-primary" href="/#prices">Open the price comparison <span>→</span></Link>
+              <div><span className="eyebrow">Put your requirements into a quote</span><h2>Take your shortlist to Flatkey.</h2><p>Share the GPU, quantity, region, duration and start date. Ask for a dated quote that confirms configuration, price and delivery, then check it against the sourced market rates.</p></div>
+              <a className="button button-primary" href={flatkeyWebsiteUrl("guide_quote_checklist", "gpu_procurement")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
             </div>
           </section>
 

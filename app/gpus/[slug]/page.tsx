@@ -1,8 +1,9 @@
+import { FlatkeyRecommendation } from "@/components/flatkey-recommendation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getGpu, getOffersForGpu, getProvider, gpus } from "@/lib/data";
-import { absoluteUrl, flatkeyComputeUrl } from "@/lib/site";
+import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
@@ -60,7 +61,7 @@ export default async function GpuPage({ params }: PageProps) {
             <span>Lowest observed rate</span>
             <strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong>
             <small>per GPU / hour · sourced snapshot</small>
-            <a className="detail-flatkey-cta" href={flatkeyComputeUrl(`${gpu.slug}_profile`, "gpu_detail")} target="_blank" rel="sponsored nofollow noreferrer">View {gpu.shortName} on Flatkey Compute <span>↗</span></a>
+            <a className="detail-flatkey-cta" href={flatkeyWebsiteUrl(`${gpu.slug}_profile`, "gpu_detail")} target="_blank" rel="sponsored nofollow noreferrer">Request a {gpu.shortName} quote <span>↗</span></a>
           </div>
         </div>
         <div className="spec-strip">
@@ -72,7 +73,8 @@ export default async function GpuPage({ params }: PageProps) {
       </section>
 
       <section className="detail-content shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Price board</span><h2>{listings.length} configurations tracked</h2></div><p>Median tracked rate: <strong>{money.format(median)}</strong> per GPU-hour.</p></div>
+        <div className="detail-section-heading"><div><span className="eyebrow">Price board</span><h2>{listings.length} configurations tracked</h2></div><p>Median: <strong>{money.format(median)}</strong>/GPU-hour across listed purchase models. Compare like-for-like terms.</p></div>
+        <FlatkeyRecommendation content={`${gpu.slug}_recommended`} />
         <div className="offer-stack">
           {listings.map((offer, index) => {
             const provider = getProvider(offer.providerSlug)!;
@@ -80,10 +82,10 @@ export default async function GpuPage({ params }: PageProps) {
               <article className="offer-card" key={offer.id}>
                 <div className="offer-rank">#{index + 1}</div>
                 <div><Link href={`/providers/${provider.slug}`} className="offer-provider">{provider.name}</Link><span>{provider.type}</span></div>
-                <div><span>Configuration</span><strong>{offer.gpuCount}× {gpu.shortName} · {offer.vcpu} vCPU</strong></div>
+                <div><span>Configuration</span><strong>{offer.gpuCount}× {gpu.shortName} · {offer.vcpu ? `${offer.vcpu} vCPU` : "CPU varies"}</strong></div>
                 <div className="offer-region"><span>Region</span><strong>{offer.region}</strong></div>
                 <div className="offer-purchase"><span>Purchase</span><strong>{offer.rentalType}</strong></div>
-                <div className="offer-price"><strong>{money.format(offer.pricePerGpuHour)}</strong><span>/ GPU / hr</span></div>
+                <div className="offer-price"><strong>{money.format(offer.pricePerGpuHour)}</strong><span>/ GPU / hr</span><span>{money.format(offer.pricePerGpuHour * offer.gpuCount)} / node / hr</span><a className="data-source-link" href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "official-page" ? "Official source" : "Reference"} · {offer.observedAt.slice(0, 10)} ↗</a></div>
               </article>
             );
           })}

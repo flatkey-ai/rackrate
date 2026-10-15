@@ -1,6 +1,6 @@
 # RackRate
 
-Independent cloud GPU price-comparison site. The launch UI is branded **RackRate** through `NEXT_PUBLIC_SITE_NAME`; the brand and final domain can be changed without touching page code.
+Cloud GPU price-comparison site with Flatkey as its preferred commercial recommendation. The site is branded **RackRate** through `NEXT_PUBLIC_SITE_NAME`; the brand and final domain can be changed without touching page code.
 
 ## Included
 
@@ -10,7 +10,8 @@ Independent cloud GPU price-comparison site. The launch UI is branded **RackRate
 - Sitemap and robots metadata
 - Standalone Next.js build and Docker image
 - Versioned dataset with source links, observation dates, and a fail-closed official-page collector
-- High-intent CTAs routed to Flatkey Compute with per-page UTM attribution
+- Flatkey appears first in the provider directory, with a service profile and quote-request CTAs carrying per-page UTM attribution
+- Sourced offer rows remain sorted by price; Flatkey has no invented price or inventory records
 
 RunPod, Hyperstack, Nebius, and Lambda prices are refreshed from their official pricing pages every six hours. Vast.ai refreshes through its official search API when the `VAST_API_KEY` GitHub Actions secret is present; without it, dated Vast.ai records remain references. AWS remains a reference until a read-only identity with `pricing:GetProducts` is configured and region-complete validation is implemented. The workflow validates each parser, typechecks, and builds before committing a new dataset; a source-layout change fails without replacing the last-known-good file.
 
@@ -41,7 +42,8 @@ Copy `.env.example` to `.env.local` and set:
 
 - `NEXT_PUBLIC_SITE_URL`: canonical production origin
 - `NEXT_PUBLIC_SITE_NAME`: final public brand
-- `NEXT_PUBLIC_FLATKEY_COMPUTE_URL`: Flatkey Compute product entry (defaults to `https://console.flatkey.ai/compute/market`)
+- `NEXT_PUBLIC_FLATKEY_WEBSITE_URL`: request-based Compute service overview (defaults to `https://flatkey.ai/compute`); current quote CTAs use this page
+- `NEXT_PUBLIC_FLATKEY_COMPUTE_URL`: console entry, reserved for console-specific links (defaults to `https://console.flatkey.ai/compute/market`)
 
 ## Next data milestone
 

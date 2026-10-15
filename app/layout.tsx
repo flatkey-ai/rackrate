@@ -86,13 +86,13 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <strong>Learn</strong>
               <Link href="/guides/gpu-rental-pricing">GPU pricing guide</Link>
               <Link href="/methodology">Methodology</Link>
-              <Link href="/gpus">Browse GPU profiles</Link>
-              <span>Source-backed prices refreshed every six hours</span>
+              <Link href="/providers/flatkey">Flatkey Compute</Link>
+              <span>Official-source refresh scheduled every six hours</span>
             </div>
           </div>
           <div className="shell footer-bottom">
             <span>© {new Date().getFullYear()} {siteConfig.name}</span>
-            <span>Prices exclude tax, storage, and negotiated discounts.</span>
+            <span>Flatkey is our commercial partner · Listed rates may exclude tax, storage and data transfer.</span>
           </div>
         </footer>
         <SiteAnalytics />

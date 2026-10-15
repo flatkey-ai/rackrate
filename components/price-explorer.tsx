@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { gpus, offers, offerDatasetGeneratedAt, offerDatasetSources, providers, type Availability, type RentalType } from "@/lib/data";
-import { flatkeyComputeUrl } from "@/lib/site";
+import { flatkeyWebsiteUrl } from "@/lib/site";
 import { trackSiteEvent } from "@/components/site-analytics";
+import { FilterSelect } from "@/components/filter-select";
+import { FlatkeyRecommendation } from "@/components/flatkey-recommendation";
 
 const availabilityLabel: Record<Availability, string> = {
   available: "Available",
@@ -83,45 +85,38 @@ export function PriceExplorer() {
         <div className={`freshness ${datasetIsFresh ? "" : "delayed"}`}><span /> {datasetIsFresh ? "Fresh source snapshot" : "Refresh delayed — verify sources"} · {freshness} UTC</div>
       </div>
 
+      <FlatkeyRecommendation content="comparison_recommended" />
+
       <div className="filter-bar">
         <label className="search-field">
           <span className="sr-only">Search offers</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15A7.5 7.5 0 1 1 4 11.5a7.5 7.5 0 0 1 15 0Z" /></svg>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search GPU, provider, or region" />
         </label>
-        <label>
-          <span className="filter-label">GPU</span>
-          <select value={gpu} onChange={(event) => { setGpu(event.target.value); trackSiteEvent("price_filter_changed", { filter: "gpu", value: event.target.value }); }}>
-            <option value="all">All GPUs</option>
-            {gpus.map((entry) => <option key={entry.slug} value={entry.slug}>{entry.shortName}</option>)}
-          </select>
-        </label>
-        <label>
-          <span className="filter-label">Rental</span>
-          <select value={rental} onChange={(event) => { setRental(event.target.value as "all" | RentalType); trackSiteEvent("price_filter_changed", { filter: "rental", value: event.target.value }); }}>
-            <option value="all">All types</option>
-            <option value="On-demand">On-demand</option>
-            <option value="Spot">Spot</option>
-            <option value="Reserved">Reserved</option>
-          </select>
-        </label>
-        <label>
-          <span className="filter-label">Region</span>
-          <select value={region} onChange={(event) => { setRegion(event.target.value); trackSiteEvent("price_filter_changed", { filter: "region", value: event.target.value }); }}>
-            <option value="all">All regions</option>
-            {regions.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
-          </select>
-        </label>
+        <FilterSelect label="GPU" value={gpu}
+          options={[{ value: "all", label: "All GPUs", description: "Every indexed accelerator" }, ...gpus.map((entry) => ({ value: entry.slug, label: entry.shortName, description: `${entry.vramGb} GB · ${entry.architecture}` }))]}
+          onChange={(value) => { setGpu(value); trackSiteEvent("price_filter_changed", { filter: "gpu", value }); }} />
+        <FilterSelect label="Rental" value={rental}
+          options={[
+            { value: "all", label: "All types", description: "Compare purchase models" },
+            { value: "On-demand", label: "On-demand", description: "Flexible usage" },
+            { value: "Spot", label: "Spot", description: "Interruptible capacity" },
+            { value: "Reserved", label: "Reserved", description: "Committed capacity" },
+          ]}
+          onChange={(value) => { setRental(value as "all" | RentalType); trackSiteEvent("price_filter_changed", { filter: "rental", value }); }} />
+        <FilterSelect label="Region" value={region}
+          options={[{ value: "all", label: "All regions" }, ...regions.map((entry) => ({ value: entry, label: entry }))]}
+          onChange={(value) => { setRegion(value); trackSiteEvent("price_filter_changed", { filter: "region", value }); }} />
       </div>
 
       <div className="result-toolbar">
-        <p><strong>{filtered.length}</strong> matching configurations</p>
+        <p><strong>{filtered.length}</strong> matching configuration{filtered.length === 1 ? "" : "s"}</p>
         <div className="result-controls">
           <button type="button" className="reset-filters" onClick={resetFilters}>Reset filters</button>
           <label className="check-control">
             <input type="checkbox" checked={availableOnly} onChange={(event) => setAvailableOnly(event.target.checked)} />
             <span aria-hidden="true" />
-            Available capacity only
+            Hide unavailable listings
           </label>
         </div>
       </div>
@@ -179,8 +174,8 @@ export function PriceExplorer() {
       </div>
       {filtered.length > 0 && (
         <div className="explorer-conversion">
-          <div><strong>Ready to deploy the shortlist?</strong><span>Continue to Flatkey Compute to review current GPU options.</span></div>
-          <a className="button button-primary" href={flatkeyComputeUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Continue to Flatkey Compute <span>↗</span></a>
+          <div><strong>Have a configuration in mind?</strong><span>Take the GPU, region and duration to Flatkey for a formal quote.</span></div>
+          <a className="button button-primary" href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
         </div>
       )}
     </div>

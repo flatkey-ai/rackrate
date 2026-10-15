@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getGpu, getOffersForProvider, providers } from "@/lib/data";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export const metadata: Metadata = {
   title: "GPU cloud providers compared",
   description:
-    "Compare GPU cloud providers by sample hourly price, accelerator catalogue, regions, billing model, and available configurations.",
+    "Compare GPU cloud providers by sourced hourly price, accelerator catalogue, regions, billing model, and available configurations.",
   alternates: { canonical: absoluteUrl("/providers") },
   openGraph: {
     title: "GPU cloud providers compared",
@@ -26,7 +26,7 @@ export default function ProvidersIndexPage() {
           <div>
             <span className="eyebrow">Cloud provider directory</span>
             <h1>Compare where you rent GPUs.</h1>
-            <p>Provider type shapes pricing, supply, support, and operational control. Compare the sample catalogue first, then verify the exact region, machine, contract, and capacity behind any published rate.</p>
+            <p>Compare quote-based GPU services, specialist clouds and marketplaces. Flatkey matches requirements to a formal quote; the other profiles provide sourced rates to help you evaluate configurations and costs.</p>
           </div>
           <div className="provider-type-key">
             <div><span>01</span><strong>Marketplace</strong><p>Distributed host inventory with flexible pricing and configuration variance.</p></div>
@@ -39,7 +39,7 @@ export default function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>The cards use the launch sample feed. A provider with fewer rows may have a broader live catalogue than this preview shows, so treat counts as indexed coverage rather than a completeness claim.</p>
+          <p>Compare how providers supply, price and deliver capacity. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey is a commercial partner and appears first; published rates remain ordered by price in comparison tables.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {
@@ -54,11 +54,11 @@ export default function ProvidersIndexPage() {
                 <p>{provider.summary}</p>
                 <dl className="directory-facts">
                   <div><dt>Billing</dt><dd>{provider.billing}</dd></div>
-                  <div><dt>Sample coverage</dt><dd>{providerOffers.length} offers · {regionCount} region{regionCount === 1 ? "" : "s"}</dd></div>
-                  <div><dt>GPUs indexed</dt><dd>{gpuNames.length ? gpuNames.join(", ") : "No sample listings"}</dd></div>
+                  <div><dt>{provider.slug === "flatkey" ? "Capacity" : "Indexed coverage"}</dt><dd>{provider.slug === "flatkey" ? "Model, quantity and region matched per request" : `${providerOffers.length} offers · ${regionCount} region${regionCount === 1 ? "" : "s"}`}</dd></div>
+                  <div><dt>{provider.slug === "flatkey" ? "Delivery" : "GPUs indexed"}</dt><dd>{provider.slug === "flatkey" ? "Configuration and timing confirmed in the quote" : gpuNames.length ? gpuNames.join(", ") : "No indexed listings"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">
-                  <span>From <strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong>/hr</span>
+                  <span>{floor ? <>From <strong>{money.format(floor.pricePerGpuHour)}</strong>/hr</> : <strong>Request quote</strong>}</span>
                   <Link href={`/providers/${provider.slug}`}>Review {provider.name} →</Link>
                 </div>
               </article>
@@ -78,8 +78,8 @@ export default function ProvidersIndexPage() {
           <li><span>06</span><div><h3>Can procurement verify the terms?</h3><p>Match the public listing to a quote that names the GPU, quantity, location, term, and exclusions.</p></div></li>
         </ol>
         <div className="conversion-band compact">
-          <div><span className="eyebrow">Ready to compare offers?</span><h2>Put every provider on the same unit.</h2></div>
-          <Link className="button button-primary" href="/#prices">Open the price comparison <span>→</span></Link>
+          <div><span className="eyebrow">Have your requirements ready?</span><h2>Request a quote you can compare.</h2></div>
+          <a className="button button-primary" href={flatkeyWebsiteUrl("provider_directory_quote")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
         </div>
       </section>
     </main>
