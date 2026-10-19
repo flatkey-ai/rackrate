@@ -2621,6 +2621,137 @@
           "dataStatus": "seed"
         }
       ]
+    },
+    {
+      "observedAt": "2026-10-19T13:19:16.777Z",
+      "offers": [
+        {
+          "id": "aws-h100-spot",
+          "pricePerGpuHour": 3.78,
+          "availability": "limited",
+          "dataStatus": "seed"
+        },
+        {
+          "id": "hyper-a100-ca",
+          "pricePerGpuHour": 1.35,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "hyper-b200-global",
+          "pricePerGpuHour": 6,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "hyper-h100-ca",
+          "pricePerGpuHour": 2.5,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "hyper-h200-ca",
+          "pricePerGpuHour": 3.99,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "lambda-a100-us",
+          "pricePerGpuHour": 2.79,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "lambda-b200-us",
+          "pricePerGpuHour": 6.69,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "lambda-h100-us",
+          "pricePerGpuHour": 3.29,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "nebius-b200-eu",
+          "pricePerGpuHour": 8.5,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "nebius-h100-eu",
+          "pricePerGpuHour": 4.5,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "nebius-h200-eu",
+          "pricePerGpuHour": 5.4,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "nebius-l40s-eu",
+          "pricePerGpuHour": 1.55,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-4090-global",
+          "pricePerGpuHour": 0.34,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-a100-global",
+          "pricePerGpuHour": 1.19,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-b200-global",
+          "pricePerGpuHour": 5.98,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-h100-global",
+          "pricePerGpuHour": 1.99,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-h200-global",
+          "pricePerGpuHour": 3.59,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "runpod-l40s-global",
+          "pricePerGpuHour": 0.79,
+          "availability": "unknown",
+          "dataStatus": "official-page"
+        },
+        {
+          "id": "vast-4090-eu",
+          "pricePerGpuHour": 0.32,
+          "availability": "available",
+          "dataStatus": "seed"
+        },
+        {
+          "id": "vast-a100-us",
+          "pricePerGpuHour": 0.88,
+          "availability": "available",
+          "dataStatus": "seed"
+        },
+        {
+          "id": "vast-h100-in",
+          "pricePerGpuHour": 1.56,
+          "availability": "limited",
+          "dataStatus": "seed"
+        }
+      ]
     }
   ]
 }
