@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { FxDisclosure } from "@/components/fx-disclosure";
 import { SiteAnalytics } from "@/components/site-analytics";
 import { absoluteUrl, siteConfig } from "@/lib/site";
 import "./globals.css";
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           </div>
         </header>
         {children}
+        <FxDisclosure />
         <footer className="site-footer">
           <div className="shell footer-grid">
             <div>
@@ -87,7 +89,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
               <Link href="/guides/gpu-rental-pricing">GPU pricing guide</Link>
               <Link href="/methodology">Methodology</Link>
               <Link href="/providers/flatkey">Flatkey Compute</Link>
-              <span>Official-source refresh scheduled every six hours</span>
+              <span>Daily price refresh · 10:30 China time (UTC+8)</span>
             </div>
           </div>
           <div className="shell footer-bottom">

@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { PriceExplorer } from "@/components/price-explorer";
-import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, isRegionIndexable, offers, providers, regions } from "@/lib/data";
+import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, gpuMemoryLabel, isRegionIndexable, offers, providers, regions } from "@/lib/data";
+import { cheapestComparableOffer, formatFxRate, formatInstancePrice, formatOriginalPrice, formatBenchmarkPrice } from "@/lib/pricing";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export default function Home() {
   const h100 = getCheapestOffer("nvidia-h100");
-  const a100 = getCheapestOffer("nvidia-a100-80gb");
+  const a100 = getCheapestOffer("nvidia-a100");
   const l40s = getCheapestOffer("nvidia-l40s");
 
   return (
@@ -27,27 +27,27 @@ export default function Home() {
             <div className="terminal-top"><span>MARKET / OBSERVED RATES</span><span className="terminal-live"><i /> SOURCED</span></div>
             <div className="terminal-focus">
               <div>
-                <span>Lowest indexed rate</span>
+                <span>USD on-demand benchmark</span>
                 <strong>H100</strong>
               </div>
-              <div className="terminal-price"><strong>{money.format(h100.pricePerGpuHour)}</strong><span>/ GPU / HR</span></div>
+              <div className="terminal-price"><strong>{formatBenchmarkPrice(h100)}</strong><span>/ GPU / HR</span></div>
             </div>
             <div className="terminal-evidence">
-              <span>{providers.find((provider) => provider.slug === h100.providerSlug)?.name} · {h100.region} · {h100.rentalType}</span>
-              <p>{h100.gpuCount}× GPU node · {money.format(h100.pricePerGpuHour * h100.gpuCount)}/hr total</p>
-              <a href={h100.sourceUrl} target="_blank" rel="nofollow noreferrer">{h100.dataStatus === "official-page" ? "Official-source price" : "Dated reference price"} ↗</a>
-              <small>Observed {h100.observedAt.slice(0, 10)} · Confirm current price and capacity with the provider.</small>
+              <span>{h100 ? `${providers.find((provider) => provider.slug === h100.providerSlug)?.name} · ${h100.region} · ${h100.rentalType}` : "No comparable USD hourly quote"}</span>
+              <p>{h100 ? formatInstancePrice(h100) : "Check source configurations"}</p>{h100 && <small>{formatOriginalPrice(h100)} · {formatFxRate(h100)}</small>}
+              <a href={h100?.sourceUrl ?? "/methodology"} target="_blank" rel="nofollow noreferrer">{h100?.dataStatus === "official-page" ? "Official-source price" : "Dated reference price"} ↗</a>
+              <small>Observed {h100?.observedAt.slice(0, 10) ?? "Not observed"} · Confirm current price and capacity with the provider.</small>
             </div>
             <div className="terminal-stats">
-              <div><span>A100 80GB</span><strong>{money.format(a100.pricePerGpuHour)}</strong><small>lowest indexed</small></div>
-              <div><span>L40S</span><strong>{money.format(l40s.pricePerGpuHour)}</strong><small>lowest indexed</small></div>
+              <div><span>A100 family</span><strong>{formatBenchmarkPrice(a100)}</strong><small>USD on-demand / GPU-hour</small></div>
+              <div><span>L40S</span><strong>{formatBenchmarkPrice(l40s)}</strong><small>USD on-demand / GPU-hour</small></div>
               <div><span>Configurations</span><strong>{offers.length}</strong><small>indexed offers</small></div>
             </div>
           </div>
         </div>
         <div className="ticker" aria-label="Supported GPU models">
           <div className="ticker-track">
-            {[0, 1].map((group) => <div className="ticker-group" aria-hidden={group === 1} key={group}>{gpus.map((gpu) => <span key={`${group}-${gpu.slug}`}><i />{gpu.shortName}<small>{gpu.vramGb} GB</small></span>)}</div>)}
+            {[0, 1].map((group) => <div className="ticker-group" aria-hidden={group === 1} key={group}>{gpus.map((gpu) => <span key={`${group}-${gpu.slug}`}><i />{gpu.shortName}<small>{gpu.vramGb === null ? "Multiple variants" : `${gpu.vramGb} GB`}</small></span>)}</div>)}
           </div>
         </div>
       </section>
@@ -69,8 +69,8 @@ export default function Home() {
               <Link href={`/gpus/${gpu.slug}`} className="gpu-card" key={gpu.slug}>
                 <div className="gpu-card-top"><span>0{index + 1}</span><span className="tier-tag">{gpu.tier}</span></div>
                 <h3>{gpu.shortName}</h3>
-                <p>{gpu.architecture} · {gpu.vramGb} GB {gpu.memoryType}</p>
-                <div className="gpu-card-bottom"><span>From <strong>{money.format(cheapest.pricePerGpuHour)}</strong>/hr</span><span>{listings.length} offers ↗</span></div>
+                <p>{gpu.architecture} · {gpuMemoryLabel(gpu)}</p>
+                <div className="gpu-card-bottom"><span>USD on-demand <strong>{formatBenchmarkPrice(cheapest)}</strong>/hr</span><span>{listings.length} offers ↗</span></div>
               </Link>
             );
           })}
@@ -86,14 +86,14 @@ export default function Home() {
           <div className="provider-list">
             {providers.map((provider, index) => {
               const providerOffers = getOffersForProvider(provider.slug);
-              const floor = [...providerOffers].sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour)[0];
+              const floor = cheapestComparableOffer(providerOffers);
               return (
                 <Link href={`/providers/${provider.slug}`} className="provider-row" key={provider.slug}>
                   <span className="provider-index">{String(index + 1).padStart(2, "0")}</span>
                   <span className="provider-name">{provider.name}<small>{provider.type}</small></span>
                   <span className="provider-hq">{provider.hq}</span>
                   <span className="provider-count">{provider.slug === "flatkey" ? "Workload-based quotes" : `${providerOffers.length} configuration${providerOffers.length === 1 ? "" : "s"}`}</span>
-                  <span className="provider-floor">{floor ? <>from <strong>{money.format(floor.pricePerGpuHour)}</strong></> : <strong>Request quote</strong>}</span>
+                  <span className="provider-floor">{floor ? <>USD / hr <strong>{formatBenchmarkPrice(floor)}</strong></> : <strong>{provider.slug === "flatkey" ? "Request quote" : "See rates"}</strong>}</span>
                   <span className="provider-arrow">↗</span>
                 </Link>
               );
@@ -122,8 +122,9 @@ export default function Home() {
         </div>
         <div className="home-region-grid">
           {regions.filter((region) => isRegionIndexable(region.slug)).map((region) => {
-            const regionOffers = getOffersForRegion(region.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
-            return <Link href={`/regions/${region.slug}`} key={region.slug}><span>{region.label}</span><strong>{region.name}</strong><small>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"} · from {regionOffers[0] ? money.format(regionOffers[0].pricePerGpuHour) : "—"}/hr</small><i>↗</i></Link>;
+            const regionOffers = getOffersForRegion(region.slug);
+            const floor = cheapestComparableOffer(regionOffers);
+            return <Link href={`/regions/${region.slug}`} key={region.slug}><span>{region.label}</span><strong>{region.name}</strong><small>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"} · USD on-demand {formatBenchmarkPrice(floor)}/hr</small><i>↗</i></Link>;
           })}
         </div>
       </section>
@@ -139,7 +140,7 @@ export default function Home() {
         <div className="principle-lead"><span className="eyebrow">Built for scrutiny</span><h2>A cheap number is useless without context.</h2></div>
         <div className="principle-grid">
           <article><span>01</span><h3>Source-linked</h3><p>Every indexed offer carries a provider or pricing-page link for follow-up verification.</p></article>
-          <article><span>02</span><h3>Normalized</h3><p>Observed rates are shown in USD per GPU-hour while preserving total-node cost and purchase type.</p></article>
+          <article><span>02</span><h3>Normalized</h3><p>Prices are displayed in USD using dated ECB reference rates where conversion is needed. Original amounts, periods, GPU variants and conditions remain visible. Benchmarks exclude offline, member and component-only rates.</p></article>
           <article><span>03</span><h3>Status-labeled</h3><p>Observation dates and source labels stay visible. A published price does not guarantee current inventory.</p></article>
         </div>
       </section>

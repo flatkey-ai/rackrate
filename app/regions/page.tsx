@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getGpu, getOffersForRegion, getProvider, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
+import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export const metadata: Metadata = {
   title: "GPU cloud regions and rental prices",
@@ -46,8 +46,8 @@ export default function RegionsIndexPage() {
         </div>
         <div className="region-grid">
           {regions.map((region, index) => {
-            const regionOffers = getOffersForRegion(region.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
-            const floor = regionOffers[0];
+            const regionOffers = getOffersForRegion(region.slug);
+            const floor = cheapestComparableOffer(regionOffers);
             const gpuCount = new Set(regionOffers.map((offer) => offer.gpuSlug)).size;
             const providerCount = new Set(regionOffers.map((offer) => offer.providerSlug)).size;
             const cheapestGpu = floor ? getGpu(floor.gpuSlug) : undefined;
@@ -64,7 +64,7 @@ export default function RegionsIndexPage() {
                   <span>{providerCount} provider{providerCount === 1 ? "" : "s"}</span>
                   <span>{coverage.officialCount} verified · {coverage.referenceCount} reference</span>
                 </div>
-                <div className="region-card-floor"><span>{indexable ? "Lowest indexed rate" : "Limited research note"}</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>{cheapestGpu?.shortName || "Awaiting sourced pricing"} · {cheapestProvider?.name || "Location checklist available"}</small></div>
+                <div className="region-card-floor"><span>{indexable ? "USD on-demand benchmark" : "Limited research note"}</span><strong>{formatBenchmarkPrice(floor)}</strong><small>{cheapestGpu?.shortName || "Awaiting sourced pricing"} · {cheapestProvider?.name || "Location checklist available"}</small></div>
                 <span className="region-card-arrow">↗</span>
               </Link>
             );

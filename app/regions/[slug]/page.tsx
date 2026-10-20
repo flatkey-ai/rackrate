@@ -1,12 +1,12 @@
-import { FlatkeyRecommendation } from "@/components/flatkey-recommendation";
+import { PriceExplorer } from "@/components/price-explorer";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getGpu, getOffersForRegion, getProvider, getRegion, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
+import { getOffersForRegion, getRegion, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
+import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export function generateStaticParams() {
   return regions.map((region) => ({ slug: region.slug }));
@@ -31,8 +31,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function RegionDetailPage({ params }: PageProps) {
   const region = getRegion((await params).slug);
   if (!region) notFound();
-  const regionOffers = getOffersForRegion(region.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
-  const floor = regionOffers[0];
+  const regionOffers = getOffersForRegion(region.slug);
+  const floor = cheapestComparableOffer(regionOffers);
   const providerCount = new Set(regionOffers.map((offer) => offer.providerSlug)).size;
   const gpuCount = new Set(regionOffers.map((offer) => offer.gpuSlug)).size;
   const sourceLabels = Array.from(new Set(regionOffers.map((offer) => offer.region)));
@@ -86,7 +86,7 @@ export default async function RegionDetailPage({ params }: PageProps) {
         <div className="region-detail-title">
           <div><span className="eyebrow">{region.label}</span><h1>GPU cloud pricing in {region.name}.</h1><p>{region.summary}</p><a className="button button-primary hero-flatkey-cta" href={flatkeyWebsiteUrl(`region_${region.slug}_profile`, "region_detail")} target="_blank" rel="sponsored nofollow noreferrer">Discuss this region with Flatkey <span>↗</span></a></div>
           <div className="region-metric-panel">
-            <div><span>Lowest indexed rate</span><strong>{floor ? money.format(floor.pricePerGpuHour) : "—"}</strong><small>per GPU / hour</small></div>
+            <div><span>USD on-demand benchmark</span><strong>{formatBenchmarkPrice(floor)}</strong><small>per GPU / hour</small></div>
             <div><span>Indexed GPUs</span><strong>{gpuCount}</strong><small>accelerator models</small></div>
             <div><span>Source confidence</span><strong>{coverage.officialCount} / {coverage.referenceCount}</strong><small>verified / reference</small></div>
             <div><span>Last checked</span><strong className="metric-text">{verificationDate}</strong><small>{sourceLabels.join(" · ") || "No source label"}</small></div>
@@ -95,24 +95,8 @@ export default async function RegionDetailPage({ params }: PageProps) {
       </section>
 
       <section className="region-offers shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Regional price board</span><h2>{regionOffers.length} indexed configuration{regionOffers.length === 1 ? "" : "s"}</h2></div><p>Sorted by normalized price per physical GPU-hour.</p></div>
-        <FlatkeyRecommendation content={`region_${region.slug}_recommended`} />
-        {regionOffers.length === 0 && <div className="empty-state"><strong>No sourced prices indexed for {region.name} yet.</strong><span>Use the location checklist below and request a quote that confirms the facility and capacity.</span></div>}
-        <div className="region-offer-list">
-          {regionOffers.map((offer) => {
-            const gpu = getGpu(offer.gpuSlug)!;
-            const provider = getProvider(offer.providerSlug)!;
-            return (
-              <article className="region-offer-row" key={offer.id}>
-                <div><span>GPU</span><Link href={`/gpus/${gpu.slug}`}>{gpu.shortName}</Link><small>{gpu.vramGb} GB {gpu.memoryType}</small></div>
-                <div><span>Provider</span><Link href={`/providers/${provider.slug}`}>{provider.name}</Link><small>{provider.type}</small></div>
-                <div><span>Node</span><strong>{offer.gpuCount}× GPU · {offer.vcpu ? `${offer.vcpu} vCPU` : "CPU varies"}</strong><small>{offer.ramGb ? `${offer.ramGb} GB system RAM` : "RAM varies"}</small></div>
-                <div><span>Terms</span><strong>{offer.rentalType}</strong><small>{offer.availability} · egress {offer.egress}</small></div>
-                <div className="region-offer-price"><span>Per GPU / hr</span><strong>{money.format(offer.pricePerGpuHour)}</strong><small>{money.format(offer.pricePerGpuHour * offer.gpuCount)} total / hr</small><a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "official-page" ? "Verified official price" : "Reference price"} ↗</a></div>
-              </article>
-            );
-          })}
-        </div>
+        <div className="detail-section-heading"><div><span className="eyebrow">Regional price board</span><h2>{regionOffers.length} indexed configuration{regionOffers.length === 1 ? "" : "s"}</h2></div><p>Only source-published location labels are used. USD prices retain original amounts, dated FX rates, billing periods and price bases.</p></div>
+        {regionOffers.length === 0 ? <div className="empty-state"><strong>No sourced prices indexed for {region.name} yet.</strong><span>Use the location checklist below and confirm the facility and capacity.</span></div> : <PriceExplorer regionNames={[...new Set(regionOffers.flatMap((offer) => offer.regions))]} />}
         <div className="coverage-disclosure"><strong>Check the location and capacity before committing.</strong><p>Indexed rates are dated observations. Ask Flatkey to confirm your requested region, quantity, machine specification, price and delivery conditions in a formal quote; the regional rates above remain a separate market benchmark.</p></div>
       </section>
 

@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test scripts/*.test.mjs",
+    "test": "node --test scripts/*.test.mjs && node --experimental-strip-types --test lib/pricing.test.ts",
     "data:refresh": "node scripts/refresh-prices.mjs",
     "seo:audit": "node scripts/seo-audit.mjs",
     "typecheck": "tsc --noEmit"

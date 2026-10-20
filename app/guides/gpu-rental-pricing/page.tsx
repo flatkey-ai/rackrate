@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getCheapestOffer } from "@/lib/data";
+import { formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export const metadata: Metadata = {
   title: "GPU rental pricing guide: compare cost per hour",
@@ -38,7 +38,7 @@ const faqItems = [
 
 export default function GpuRentalPricingGuide() {
   const h100 = getCheapestOffer("nvidia-h100");
-  const a100 = getCheapestOffer("nvidia-a100-80gb");
+  const a100 = getCheapestOffer("nvidia-a100");
 
   const faqSchema = {
     "@context": "https://schema.org",
@@ -106,9 +106,9 @@ export default function GpuRentalPricingGuide() {
             <h2>Compare the GPU that fits, not every GPU on the market.</h2>
             <p>Filter by memory capacity and software compatibility before sorting by price. If weights, activations, KV cache, optimizer state, or batch size do not fit, the low hourly rate is irrelevant. If several accelerators fit, estimate time-to-result and expected utilization.</p>
             <div className="guide-model-links">
-              <Link href="/gpus/nvidia-h100"><span>Training and inference</span><strong>H100 GPU rental prices</strong><small>Lowest indexed rate {h100 ? money.format(h100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
+              <Link href="/gpus/nvidia-h100"><span>Training and inference</span><strong>H100 GPU rental prices</strong><small>USD on-demand {formatBenchmarkPrice(h100)}/GPU/hr →</small></Link>
               <Link href="/gpus/nvidia-h200"><span>High-memory inference</span><strong>H200 GPU price comparison</strong><small>141 GB HBM3e →</small></Link>
-              <Link href="/gpus/nvidia-a100-80gb"><span>Mature cloud capacity</span><strong>A100 GPU rental prices</strong><small>Lowest indexed rate {a100 ? money.format(a100.pricePerGpuHour) : "—"}/GPU/hr →</small></Link>
+              <Link href="/gpus/nvidia-a100"><span>Mature cloud capacity</span><strong>A100 GPU rental prices</strong><small>USD on-demand {formatBenchmarkPrice(a100)}/GPU/hr →</small></Link>
               <Link href="/gpus/nvidia-b200"><span>Blackwell capacity</span><strong>NVIDIA B200 rental prices</strong><small>180 GB HBM3e →</small></Link>
             </div>
             <div className="guide-note"><strong>Looking for B300?</strong><p>RackRate does not yet have a source-backed B300 rental price. You can include B300 in a Flatkey capacity request, but availability and price must be confirmed in a formal quote.</p></div>
