@@ -1,13 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getCheapestOffer, getOffersForGpu, gpus, providers } from "@/lib/data";
+import { getCheapestOffer, getOffersForGpu, gpus, gpuMemoryLabel, providers } from "@/lib/data";
+import { formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-});
 
 export const metadata: Metadata = {
   title: "GPU rental prices by model: H100, H200, A100 & more",
@@ -35,15 +31,12 @@ const faqs = [
   {
     question: "Do you list a B300 GPU price?",
     answer:
-      "Not yet. RackRate has no source-backed B300 rental price in its dataset, so RackRate does not publish an estimated price. The model will be added when a source-backed listing is available.",
+      "Yes. B300 prices are collected from public provider sources. Each listing keeps its configuration, price basis and purchase conditions; published prices do not confirm stock.",
   },
 ];
 
 export default function GpusIndexPage() {
-  const allPrices = gpus
-    .map((gpu) => getCheapestOffer(gpu.slug)?.pricePerGpuHour)
-    .filter((price): price is number => typeof price === "number");
-  const marketFloor = Math.min(...allPrices);
+  const marketFloor = getCheapestOffer();
 
   const faqSchema = {
     "@context": "https://schema.org",
@@ -64,12 +57,12 @@ export default function GpusIndexPage() {
           <div>
             <span className="eyebrow">GPU rental price index</span>
             <h1>Compare GPU prices by model.</h1>
-            <p>Compare accelerators by memory, architecture and sourced hourly rates. Once you have a model in mind, ask Flatkey to match the GPU count, region and duration to your workload. Rates below are in USD per physical GPU-hour; check each record’s source and date.</p>
+            <p>Compare accelerators by memory, architecture and sourced hourly rates. Once you have a model in mind, ask Flatkey to match the GPU count, region and duration to your workload. Card benchmarks use on-demand GPU-hour quotes displayed in USD, with dated ECB conversions where needed. Offline, reference, starting, member and GPU-component rates are excluded. Original prices, periods and FX rates stay visible on each model page and in the exchange-rate disclosure below.</p>
           </div>
           <div className="directory-summary">
             <div><span>Models tracked</span><strong>{gpus.length}</strong></div>
             <div><span>Providers profiled</span><strong>{providers.length}</strong></div>
-            <div><span>Lowest indexed rate</span><strong>{money.format(marketFloor)}</strong><small>per GPU / hr</small></div>
+            <div><span>USD on-demand benchmark</span><strong>{formatBenchmarkPrice(marketFloor)}</strong><small>per GPU / hr</small></div>
           </div>
         </div>
       </section>
@@ -90,12 +83,12 @@ export default function GpusIndexPage() {
                 <Link href={`/gpus/${gpu.slug}`}><h2>{gpu.shortName}</h2></Link>
                 <p>{gpu.summary}</p>
                 <dl className="directory-facts">
-                  <div><dt>Memory</dt><dd>{gpu.vramGb} GB {gpu.memoryType}</dd></div>
+                  <div><dt>Memory</dt><dd>{gpuMemoryLabel(gpu)}</dd></div>
                   <div><dt>Architecture</dt><dd>{gpu.architecture}</dd></div>
                   <div><dt>Indexed listings</dt><dd>{gpuOffers.length} across {providerCount} provider{providerCount === 1 ? "" : "s"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">
-                  <span>From <strong>{cheapest ? money.format(cheapest.pricePerGpuHour) : "—"}</strong>/hr</span>
+                  <span>USD on-demand <strong>{formatBenchmarkPrice(cheapest)}</strong>/hr</span>
                   <Link href={`/gpus/${gpu.slug}`}>Compare {gpu.shortName} prices →</Link>
                 </div>
               </article>

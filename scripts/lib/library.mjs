@@ -1,0 +1,345 @@
+import { createHash } from "node:crypto";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { convertAmountToUsd } from "./fx.mjs";
+
+const execFile = promisify(execFileCallback);
+export const LIBRARY_VERSION = "0.6.0";
+export const LIBRARY_COMMIT = "c67cc8edfb7b7418f2dd0f1bb4b9ce6ed2238326";
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
+  if (explicit) return explicit;
+  const candidates = process.platform === "win32"
+    ? [join(root, ".venv", "Scripts", "python.exe"), join(root, ".venv", "bin", "python")]
+    : [join(root, ".venv", "bin", "python"), join(root, ".venv", "Scripts", "python.exe")];
+  return candidates.find((candidate) => exists(candidate)) ?? "python3";
+}
+export const REQUIRED_PROVIDERS = Object.freeze([
+  "nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod",
+  "digitalocean", "verda", "ebcloud", "azure", "suanli",
+]);
+
+const PROVIDERS = {
+  nebius: ["Nebius", "GPU cloud", "https://nebius.com"],
+  crusoe: ["Crusoe", "GPU cloud", "https://www.crusoe.ai"],
+  lambda: ["Lambda", "GPU cloud", "https://lambda.ai"],
+  ucloud: ["UCloud", "GPU cloud", "https://www.ucloud.cn"],
+  autodl: ["AutoDL", "Marketplace", "https://www.autodl.com"],
+  runpod: ["RunPod", "GPU cloud", "https://www.runpod.io"],
+  digitalocean: ["DigitalOcean", "GPU cloud", "https://www.digitalocean.com"],
+  verda: ["Verda", "GPU cloud", "https://verda.com"],
+  ebcloud: ["EBCloud", "GPU cloud", "https://www.ebcloud.com"],
+  azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
+  suanli: ["共绩算力", "GPU cloud", "https://suanli.cn"],
+};
+
+// Settings() deliberately bypasses .env and credentials inherited by this process.
+// The library owns collection only; RackRate owns persistence and publication.
+export const PYTHON_COLLECTION_CODE = `
+import json
+from gpu_price_monitor import Settings, __version__, collect_prices
+if __version__ != "${LIBRARY_VERSION}":
+    raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
+result = collect_prices("all", settings=Settings(), include_coverage=True)
+print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+`;
+
+export async function collectPublicLibrary({
+  python = collectionPython(),
+  exec = execFile,
+} = {}) {
+  const { stdout } = await exec(python, ["-c", PYTHON_COLLECTION_CODE], {
+    encoding: "utf8", timeout: 12 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+  });
+  let result;
+  try { result = JSON.parse(stdout); }
+  catch { throw new Error("gpu-price-monitor did not return valid JSON; existing data was preserved"); }
+  validatePublicResult(result);
+  return result;
+}
+
+function timestamp(value, label) {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return value;
+}
+
+function monetaryAmount(value, label) {
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`Invalid ${label}`);
+  }
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) throw new Error(`Invalid ${label}`);
+  return amount;
+}
+
+function strings(value, label) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || !entry)) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return [...value];
+}
+
+export function validatePublicResult(result) {
+  if (result?.schema_version !== 1 || result.status !== "success") {
+    throw new Error("Public collection was incomplete; existing data was preserved");
+  }
+  timestamp(result.collected_at, "collection timestamp");
+  if (!Array.isArray(result.prices) || !result.prices.length || !Array.isArray(result.provider_results)) {
+    throw new Error("Public collection has no prices or source results");
+  }
+  const sources = new Map();
+  for (const source of result.provider_results) {
+    if (sources.has(source.provider) || !REQUIRED_PROVIDERS.includes(source.provider)) {
+      throw new Error(`Unexpected or duplicate source: ${source.provider}`);
+    }
+    if (source.status !== "success" || source.error || source.returned_count < 1) {
+      throw new Error(`Required public source failed: ${source.provider}`);
+    }
+    timestamp(source.observed_at, `${source.provider} timestamp`);
+    sources.set(source.provider, source);
+  }
+  for (const provider of REQUIRED_PROVIDERS) {
+    if (!sources.has(provider)) throw new Error(`Missing required public source: ${provider}`);
+    const count = result.prices.filter((quote) => quote.provider === provider).length;
+    if (count !== sources.get(provider).returned_count) throw new Error(`Source count mismatch: ${provider}`);
+  }
+  const coverage = result.coverage;
+  if (coverage?.collection_status !== "success" || coverage.scope !== "returned_quotes"
+      || !Array.isArray(coverage.models) || !Array.isArray(coverage.extra_models)
+      || !Array.isArray(coverage.excluded_quote_indices) || coverage.excluded_quote_indices.length) {
+    throw new Error("Complete model coverage metadata is required");
+  }
+  const indices = new Set();
+  for (const model of [...coverage.models, ...coverage.extra_models]) {
+    if (typeof model.gpu_model !== "string" || !model.gpu_model || !Array.isArray(model.quote_indices)) {
+      throw new Error("Invalid model coverage metadata");
+    }
+    for (const index of model.quote_indices) {
+      if (!Number.isSafeInteger(index) || index < 0 || index >= result.prices.length || indices.has(index)) {
+        throw new Error("Invalid or duplicated model coverage index");
+      }
+      indices.add(index);
+    }
+  }
+  if (indices.size !== result.prices.length) throw new Error("Model coverage does not account for every quote");
+  return result;
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  }
+  return value;
+}
+
+function stableId(quote) {
+  // Neither the amount, observed date, availability nor effective date defines a SKU.
+  // Keep package/configuration and tariff dimensions so different rates cannot collide.
+  const identity = {
+    provider: quote.provider, product: quote.product_type,
+    model: quote.gpu_model, name: quote.raw_name, sku: quote.raw_sku,
+    variant: quote.gpu_variant, vram: quote.vram_gb, count: quote.gpu_count,
+    currency: quote.currency, unit: quote.unit, mode: quote.billing_mode,
+    basis: quote.price_basis, tier: quote.pricing_tier, cloud: quote.cloud_tier,
+    regions: [...(quote.regions ?? [])].sort(), zones: [...(quote.zones ?? [])].sort(),
+    resources: quote.resources ?? {}, conditions: quote.conditions ?? {},
+    selectedConfiguration: quote.selected_configuration ?? {},
+    commitment: quote.minimum_commitment ?? null,
+    promotionActivity: quote.promotion?.activity_id ?? null,
+    promotionDuration: quote.promotion?.duration ?? null,
+    promotionDurationUnit: quote.promotion?.duration_unit ?? null,
+    accountScope: quote.account_scope, taxScope: quote.tax_scope,
+    productScope: quote.pricing_product_scope ?? null,
+    azureMeter: quote.azure_meter?.meter_id ?? null,
+  };
+  const digest = createHash("sha256").update(JSON.stringify(canonical(identity))).digest("hex").slice(0, 24);
+  return `public-${quote.provider}-${digest}`;
+}
+
+function vendorFor(model, quote) {
+  if (quote.gpu_vendor === "NVIDIA" || quote.gpu_vendor === "AMD") return quote.gpu_vendor;
+  if (/^MI\d/.test(model)) return "AMD";
+  if (/^(?:RTX|GTX|A\d|H\d|L\d|T\d|V\d|B\d|GB\d|GH\d|P\d)/.test(model)) return "NVIDIA";
+  return "Unknown";
+}
+
+export function modelSlug(model, vendor) {
+  let name = model.replace(/^RTXPRO/, "RTX PRO ").replace(/^RTX(?=[A-Z0-9])/, "RTX ");
+  name = name.replace(/(?<=\d)ADA$/, " ADA");
+  const slug = name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!slug) throw new Error(`GPU model has no usable slug: ${model}`);
+  return `${vendor === "Unknown" ? "gpu" : vendor.toLowerCase()}-${slug}`;
+}
+
+function conditionsFor(quote) {
+  return [
+    ...(quote.notes ?? []),
+    ...(quote.pricing_tier ? [`Pricing tier: ${quote.pricing_tier}`] : []),
+    ...(quote.cloud_tier ? [`Cloud tier: ${quote.cloud_tier}`] : []),
+    ...(quote.membership_required ? ["Membership required; eligibility not verified"] : []),
+    ...(quote.minimum_commitment ? [`Minimum commitment: ${JSON.stringify(quote.minimum_commitment)}`] : []),
+    ...(quote.promotion ? [`Promotion: ${quote.promotion.title ?? quote.promotion.activity_id}; ${quote.promotion.only_new_users ? "new customers only" : "eligibility must be verified"}${Number.isFinite(quote.promotion.purchase_limit) ? `; purchase limit ${quote.promotion.purchase_limit}` : ""}`] : []),
+  ];
+}
+
+export function normalizeLibraryResult(result) {
+  validatePublicResult(result);
+  const models = new Map();
+  for (const model of [...result.coverage.models, ...result.coverage.extra_models]) {
+    for (const index of model.quote_indices) models.set(index, model.gpu_model);
+  }
+  const catalog = new Map();
+  const offers = result.prices.map((quote, index) => {
+    if (!REQUIRED_PROVIDERS.includes(quote.provider) || !["gpu_hour", "gpu_month"].includes(quote.unit)
+        || !/^[A-Z]{3}$/.test(quote.currency ?? "")) throw new Error(`Unsupported quote dimensions at ${index}`);
+    if (!["quoted", "starting_at", "contact_sales"].includes(quote.quote_status)) {
+      throw new Error(`Unsupported quote status at ${index}`);
+    }
+    const amount = monetaryAmount(quote.amount, `${quote.provider} price`);
+    if ((quote.quote_status === "contact_sales") !== (amount === null)) throw new Error(`Missing or unexpected quote amount at ${index}`);
+    if (quote.gpu_count !== null && (!Number.isSafeInteger(quote.gpu_count) || quote.gpu_count < 1)) {
+      throw new Error(`Invalid GPU count at ${index}`);
+    }
+    const family = models.get(index);
+    const vendor = vendorFor(family, quote);
+    const gpuSlug = modelSlug(family, vendor);
+    if (!catalog.has(gpuSlug)) catalog.set(gpuSlug, {
+      slug: gpuSlug, name: family, shortName: family, vendor,
+      architecture: null, vramGb: null, memoryType: null, bandwidth: null,
+      released: null, tier: null,
+      summary: "Public rental listings grouped by source GPU family. Variant, memory and configuration remain specific to each offer.",
+    });
+    const regions = strings(quote.regions ?? [], "regions");
+    const zones = strings(quote.zones ?? [], "zones");
+    const rawAvailability = quote.availability ?? "unknown";
+    const availability = ["offline", "unavailable"].includes(rawAvailability) ? "unavailable"
+      : ["available", "limited"].includes(rawAvailability) ? rawAvailability : "unknown";
+    const billingUnit = quote.unit === "gpu_hour" ? "GPU-hour" : "GPU-month";
+    const instance = quote.instance_price;
+    const instancePrice = instance ? monetaryAmount(instance.amount, "instance price") : null;
+    if (instance && !["instance_hour", "instance_month"].includes(instance.unit)) throw new Error(`Unsupported instance unit at ${index}`);
+    const resources = quote.resources ?? {};
+    const countryCode = /^[A-Z]{2}$/.test(quote.location?.country_code ?? "") ? quote.location.country_code : "";
+    return {
+      id: stableId(quote), gpuSlug, providerSlug: quote.provider, gpuModel: family,
+      rawGpuModel: quote.gpu_model, rawName: quote.raw_name ?? null, rawSku: quote.raw_sku ?? null,
+      gpuVariant: quote.gpu_variant ?? null, vramGb: quote.vram_gb ?? null,
+      gpuCount: quote.gpu_count,
+      ...(Number.isFinite(resources.vcpus ?? resources.vcpu_count) ? { vcpu: resources.vcpus ?? resources.vcpu_count } : {}),
+      ...(Number.isFinite(resources.ram_gb) ? { ramGb: resources.ram_gb } : {}),
+      resources,
+      sourceAmount: quote.amount, pricePerGpuUnit: amount,
+      pricePerGpuHour: quote.currency === "USD" && billingUnit === "GPU-hour" ? amount : null,
+      sourceCurrency: quote.currency, billingUnit,
+      instancePrice, instanceSourceAmount: instance?.amount ?? null,
+      instanceCurrency: instance?.currency ?? null,
+      instanceBillingUnit: instance ? instance.unit.replace("_", "-") : null,
+      rentalType: quote.billing_mode === "spot" ? "Spot" : quote.billing_mode === "reserved" ? "Reserved"
+        : quote.billing_mode === "monthly" ? "Monthly" : quote.billing_mode === "on_demand" ? "On-demand" : "Other",
+      billingMode: quote.billing_mode, quoteStatus: quote.quote_status, priceBasis: quote.price_basis,
+      pricingTier: quote.pricing_tier ?? null, cloudTier: quote.cloud_tier ?? null,
+      membershipRequired: quote.membership_required ?? null, membershipDiscount: quote.membership_discount ?? null,
+      promotion: quote.promotion ?? null, selectedConfiguration: quote.selected_configuration ?? null,
+      sourceConditions: quote.conditions ?? null, minimumCommitment: quote.minimum_commitment ?? null,
+      pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
+      region: regions.length ? regions.join(", ") : "Not published", regions, zones,
+      geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
+      countryCode, location: quote.location ?? null,
+      availability, sourceAvailability: rawAvailability,
+      egress: "Not published", sourceUrl: quote.source_url,
+      sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
+      effectiveFrom: quote.effective_from ?? null, effectiveUntil: quote.effective_until ?? null,
+      accountScope: quote.account_scope ?? "unspecified", taxScope: quote.tax_scope ?? "unspecified",
+      productType: quote.product_type, conditions: conditionsFor(quote),
+      dataStatus: "official-page", sourceQuoteIndex: index,
+    };
+  });
+  validateOffers(offers);
+  return {
+    offers,
+    generatedCatalog: {
+      gpus: [...catalog.values()].sort((a, b) => a.slug.localeCompare(b.slug)),
+      providers: REQUIRED_PROVIDERS.map((slug) => {
+        const [name, type, website] = PROVIDERS[slug];
+        return { slug, name, type, hq: null, billing: "As published", website,
+          summary: "Official public rental prices collected by gpu-price-monitor. Check individual records for region, billing and availability conditions." };
+      }),
+    },
+  };
+}
+
+export function validateOffers(offers, { requireUsd = false, rates } = {}) {
+  const ids = new Set();
+  for (const offer of offers) {
+    if (ids.has(offer.id)) throw new Error(`Duplicate offer id: ${offer.id}`);
+    ids.add(offer.id);
+    const amount = offer.pricePerGpuUnit ?? offer.pricePerGpuHour;
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) throw new Error(`Invalid native price: ${offer.id}`);
+    if (amount === null && offer.quoteStatus !== "contact_sales") throw new Error(`Unquoted offer is not contact-sales: ${offer.id}`);
+    if (!requireUsd && offer.pricePerGpuHour !== null && (offer.sourceCurrency !== "USD" || offer.billingUnit !== "GPU-hour")) {
+      throw new Error(`Mixed units in hourly comparison: ${offer.id}`);
+    }
+    if (requireUsd) {
+      const expected = offer.sourceAmount === null ? null : convertAmountToUsd(offer.sourceAmount, offer.sourceCurrency, rates);
+      if (offer.priceUsdPerGpuUnit !== (expected?.amount ?? null)
+          || offer.usdSourceAmount !== (expected?.decimal ?? null)
+          || offer.pricePerGpuHour !== (offer.billingUnit === "GPU-hour" ? expected?.amount ?? null : null)) {
+        throw new Error(`USD amount does not match exact source conversion: ${offer.id}`);
+      }
+      const fx = offer.fx;
+      if (!fx || fx.sourceCurrency !== offer.sourceCurrency || fx.targetCurrency !== "USD"
+          || fx.rateDate !== rates.rateDate || fx.sourceUrl !== rates.sourceUrl || fx.sourceName !== rates.sourceName
+          || fx.rateToUsdDecimal !== rates.ratesToUsd[offer.sourceCurrency]
+          || fx.rateToUsd !== Number(rates.ratesToUsd[offer.sourceCurrency])
+          || fx.converted !== (offer.sourceCurrency !== "USD")) {
+        throw new Error(`USD conversion provenance is missing or inconsistent: ${offer.id}`);
+      }
+      const instance = offer.instancePrice == null ? null : convertAmountToUsd(offer.instanceSourceAmount, offer.instanceCurrency ?? offer.sourceCurrency, rates);
+      if (offer.instancePriceUsd !== (instance?.amount ?? null) || offer.instanceUsdSourceAmount !== (instance?.decimal ?? null)) {
+        throw new Error(`USD instance amount does not match exact source conversion: ${offer.id}`);
+      }
+    }
+  }
+}
+
+export function buildRackRateDataset(current, libraryResult, hyperstack) {
+  const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
+  if (!hyperstack?.offers?.length) throw new Error("Hyperstack returned no offers; existing data was preserved");
+  const additionalOffers = hyperstack.offers.map((offer) => ({
+    ...offer, pricePerGpuUnit: offer.pricePerGpuHour, sourceAmount: String(offer.pricePerGpuHour),
+    regions: [], zones: [], region: "Not published", countryCode: "",
+    geographicScope: "unspecified", regionScope: "unspecified",
+    gpuCount: null, egress: "Not published",
+    quoteStatus: "quoted", priceBasis: "advertised_per_gpu", billingMode: "on_demand",
+    conditions: ["Public pricing page; no compute location or current inventory was verified."],
+  }));
+  // Keep existing explicitly dated references. Never call a credential-based collector here.
+  const references = (current.offers ?? []).filter((offer) => offer.dataStatus === "seed").map((offer) => ({
+    ...offer, pricePerGpuUnit: offer.pricePerGpuHour, sourceAmount: String(offer.pricePerGpuHour),
+    quoteStatus: "quoted", priceBasis: "reference", billingMode: offer.rentalType === "Spot" ? "spot" : "on_demand",
+    conditions: ["Dated reference data; not refreshed or verified by this public collection."],
+  }));
+  const offers = [...references, ...publicOffers, ...additionalOffers].sort((a, b) => a.id.localeCompare(b.id));
+  validateOffers(offers);
+  return {
+    schemaVersion: 2,
+    generatedAt: [libraryResult.collected_at, hyperstack.observedAt].sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1),
+    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only" },
+    generatedCatalog, coverage: libraryResult.coverage,
+    sources: [
+      { provider: "reference", url: "https://rackrate.org/methodology", status: "reference",
+        fetchedAt: references.map((offer) => offer.observedAt).sort().at(-1) ?? null, offerCount: references.length },
+      ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
+        status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
+      { provider: "hyperstack", url: hyperstack.url, status: "ok", fetchedAt: hyperstack.observedAt, offerCount: additionalOffers.length },
+    ],
+    offers,
+  };
+}

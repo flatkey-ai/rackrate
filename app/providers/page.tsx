@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getGpu, getOffersForProvider, providers } from "@/lib/data";
+import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
-const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
 export const metadata: Metadata = {
   title: "GPU cloud providers compared",
@@ -39,12 +39,12 @@ export default function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>Compare how providers supply, price and deliver capacity. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey is a commercial partner and appears first; published rates remain ordered by price in comparison tables.</p>
+          <p>Compare how providers supply, price and deliver capacity. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey is a commercial partner and appears first; comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {
-            const providerOffers = getOffersForProvider(provider.slug).sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour);
-            const floor = providerOffers[0];
+            const providerOffers = getOffersForProvider(provider.slug);
+            const floor = cheapestComparableOffer(providerOffers);
             const gpuNames = Array.from(new Set(providerOffers.map((offer) => getGpu(offer.gpuSlug)?.shortName).filter(Boolean)));
             const regionCount = new Set(providerOffers.map((offer) => offer.region)).size;
             return (
@@ -58,7 +58,7 @@ export default function ProvidersIndexPage() {
                   <div><dt>{provider.slug === "flatkey" ? "Delivery" : "GPUs indexed"}</dt><dd>{provider.slug === "flatkey" ? "Configuration and timing confirmed in the quote" : gpuNames.length ? gpuNames.join(", ") : "No indexed listings"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">
-                  <span>{floor ? <>From <strong>{money.format(floor.pricePerGpuHour)}</strong>/hr</> : <strong>Request quote</strong>}</span>
+                  <span>{floor ? <>USD on-demand <strong>{formatBenchmarkPrice(floor)}</strong>/hr</> : <strong>{provider.slug === "flatkey" ? "Request quote" : "See original rates"}</strong>}</span>
                   <Link href={`/providers/${provider.slug}`}>Review {provider.name} →</Link>
                 </div>
               </article>

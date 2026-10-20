@@ -1,3 +1,4 @@
+import { cheapestComparableOffer } from "@/lib/pricing";
 import offerDataset from "@/data/offers.json";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
@@ -7,13 +8,13 @@ export type Gpu = {
   slug: string;
   name: string;
   shortName: string;
-  vendor: "NVIDIA" | "AMD";
+  vendor: "NVIDIA" | "AMD" | "Unknown";
   architecture: string;
-  vramGb: number;
+  vramGb: number | null;
   memoryType: string;
   bandwidth: string;
-  released: number;
-  tier: "Datacenter" | "Workstation" | "Consumer";
+  released: number | null;
+  tier: string;
   summary: string;
 };
 
@@ -31,19 +32,48 @@ export type Offer = {
   id: string;
   gpuSlug: string;
   providerSlug: string;
-  gpuCount: number;
+  gpuModel?: string;
+  rawGpuModel?: string;
+  rawName?: string;
+  rawSku?: string;
+  gpuCount: number | null;
+  gpuVariant: string | null;
+  vramGb: number | null;
   vcpu?: number;
   ramGb?: number;
-  pricePerGpuHour: number;
-  rentalType: RentalType;
+  pricePerGpuUnit: number | null;
+  priceUsdPerGpuUnit: number | null;
+  usdSourceAmount?: string | null;
+  fx?: { rateToUsd: number; rateDate: string; sourceUrl: string; sourceName: string; rateToUsdDecimal?: string; converted?: boolean; formula?: string; rounding?: string; observedAt?: string } | null;
+  pricePerGpuHour: number | null;
+  sourceAmount?: string | null;
+  instancePrice?: number | null;
+  instancePriceUsd?: number | null;
+  instanceSourceAmount?: string | null;
+  instanceUsdSourceAmount?: string | null;
+  instanceBillingUnit?: string | null;
+  instanceCurrency?: string | null;
+  rentalType: RentalType | "Monthly" | "Other";
+  billingMode?: string;
+  pricingTier?: string | null;
+  cloudTier?: string | null;
+  membershipRequired?: boolean;
   region: string;
+  regions: string[];
+  zones: string[];
+  geographicScope?: string;
+  regionScope?: string;
   countryCode: string;
   availability: Availability;
   egress: string;
   sourceUrl: string;
   observedAt: string;
-  sourceCurrency: "USD";
-  billingUnit: "GPU-hour";
+  sourceCurrency: string;
+  billingUnit: "GPU-hour" | "GPU-month";
+  quoteStatus: "quoted" | "starting_at" | "contact_sales";
+  priceBasis: string;
+  conditions: string[];
+  resources?: Record<string, unknown>;
   dataStatus: "official-page" | "seed";
 };
 
@@ -60,7 +90,7 @@ export type RegionProfile = {
   planningNotes: [string, string, string];
 };
 
-export const gpus: Gpu[] = [
+const curatedGpus: Gpu[] = [
   {
     slug: "nvidia-h100",
     name: "NVIDIA H100 80GB",
@@ -141,7 +171,7 @@ export const gpus: Gpu[] = [
   },
 ];
 
-export const providers: Provider[] = [
+const curatedProviders: Provider[] = [
   {
     slug: "flatkey",
     name: "Flatkey",
@@ -207,9 +237,59 @@ export const providers: Provider[] = [
   },
 ];
 
-export const offers = offerDataset.offers as Offer[];
-export const offerDatasetGeneratedAt = offerDataset.generatedAt;
-export const offerDatasetSources = offerDataset.sources;
+type GeneratedGpu = Partial<Gpu> & Pick<Gpu, "slug" | "name" | "shortName">;
+type GeneratedProvider = Partial<Provider> & Pick<Provider, "slug" | "name" | "website">;
+const dataset = offerDataset as unknown as {
+  offers: Offer[];
+  generatedAt: string;
+  collector?: { name: string; version: string; commit: string };
+  coverage?: { totals: Record<string, number> };
+  fx?: { rateDate: string; sourceName: string; sourceUrl: string; observedAt: string };
+  sources: { provider: string; status: string; [key: string]: unknown }[];
+  generatedCatalog?: { gpus: GeneratedGpu[]; providers: GeneratedProvider[] };
+};
+const gpuCatalog = new Map(curatedGpus.map((gpu) => [gpu.slug, gpu]));
+for (const entry of dataset.generatedCatalog?.gpus ?? []) {
+  const curated = gpuCatalog.get(entry.slug);
+  gpuCatalog.set(entry.slug, {
+    slug: entry.slug, name: entry.name, shortName: entry.shortName,
+    vendor: entry.vendor ?? curated?.vendor ?? "Unknown",
+    architecture: entry.architecture ?? curated?.architecture ?? "Not catalogued",
+    vramGb: entry.vramGb ?? null,
+    memoryType: entry.memoryType ?? "Varies by listing",
+    bandwidth: entry.bandwidth ?? "See provider specification",
+    released: entry.released ?? curated?.released ?? null,
+    tier: entry.tier ?? curated?.tier ?? "GPU",
+    summary: entry.summary ?? "Source-backed GPU listings. Compare each listing’s variant, memory and terms.",
+  });
+}
+export const gpus: Gpu[] = [...gpuCatalog.values()];
+const providerCatalog = new Map(curatedProviders.map((provider) => [provider.slug, provider]));
+for (const entry of dataset.generatedCatalog?.providers ?? []) {
+  const curated = providerCatalog.get(entry.slug);
+  providerCatalog.set(entry.slug, {
+    slug: entry.slug, name: entry.name, website: entry.website,
+    type: entry.type ?? curated?.type ?? "GPU cloud",
+    hq: entry.hq ?? curated?.hq ?? "Not catalogued",
+    billing: entry.billing ?? curated?.billing ?? "As published",
+    summary: entry.summary ?? "Public provider pricing collected without credentials.",
+  });
+}
+export const providers: Provider[] = [...providerCatalog.values()];
+export const offers: Offer[] = dataset.offers.map((offer) => ({
+  ...offer,
+  pricePerGpuUnit: offer.pricePerGpuUnit ?? (offer.sourceCurrency === "USD" ? offer.pricePerGpuHour : null) ?? null,
+  priceUsdPerGpuUnit: offer.priceUsdPerGpuUnit ?? (offer.sourceCurrency === "USD" ? offer.pricePerGpuUnit ?? offer.pricePerGpuHour : null) ?? null,
+  gpuVariant: offer.gpuVariant ?? null,
+  vramGb: offer.vramGb ?? null,
+  quoteStatus: offer.quoteStatus ?? "quoted",
+  priceBasis: offer.priceBasis ?? "advertised_per_gpu",
+  conditions: offer.conditions ?? [],
+  regions: offer.regions ?? (offer.region && offer.region !== "Global" ? [offer.region] : []),
+  zones: offer.zones ?? [],
+}));
+export const offerDatasetGeneratedAt = dataset.generatedAt;
+export const offerDatasetSources = dataset.sources;
 
 export const regions: RegionProfile[] = [
   {
@@ -345,8 +425,25 @@ export const getRegionForOffer = (offer: Offer) =>
   );
 
 export function getCheapestOffer(gpuSlug?: string) {
-  const matching = gpuSlug ? offers.filter((offer) => offer.gpuSlug === gpuSlug) : offers;
-  return matching
-    .filter((offer) => offer.availability !== "unavailable")
-    .sort((a, b) => a.pricePerGpuHour - b.pricePerGpuHour)[0];
+  return cheapestComparableOffer(gpuSlug ? getOffersForGpu(gpuSlug) : offers);
 }
+
+export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies by listing" : `${gpu.vramGb} GB ${gpu.memoryType}`;
+
+// Public health metadata only. No process configuration or credentials are exposed.
+export const pricingDatasetStatus = {
+  schemaVersion: 1,
+  generatedAt: dataset.generatedAt,
+  collector: dataset.collector ?? null,
+  libraryCoverage: { totals: dataset.coverage?.totals ?? null },
+  fx: dataset.fx ? { rateDate: dataset.fx.rateDate, sourceName: dataset.fx.sourceName, sourceUrl: dataset.fx.sourceUrl, observedAt: dataset.fx.observedAt } : null,
+  counts: {
+    offers: offers.length,
+    officialOffers: offers.filter((offer) => offer.dataStatus === "official-page").length,
+    referenceOffers: offers.filter((offer) => offer.dataStatus === "seed").length,
+    offlineOffers: offers.filter((offer) => offer.availability === "unavailable").length,
+    contactSalesOffers: offers.filter((offer) => offer.quoteStatus === "contact_sales").length,
+  },
+  sources: dataset.sources.map((source) => ({ provider: source.provider, status: source.status, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
+  providerCounts: Object.fromEntries([...new Set(offers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, offers.filter((offer) => offer.providerSlug === provider).length])),
+};

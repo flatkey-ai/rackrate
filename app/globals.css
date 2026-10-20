@@ -829,3 +829,27 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .flatkey-overview { padding-block: 55px; }
   .terminal-evidence { padding: 16px 20px 24px; }
 }
+
+/* Keep source currencies, billing periods and eligibility visible together. */
+.price-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.price-filter-grid .search-field { grid-column: span 2; }
+.price-filter-grid .filter-select { min-width: 0; }
+.cell-detail { display: block; color: var(--muted, #686b65); font-size: 11px; line-height: 1.6; margin-top: 5px; white-space: normal; }
+.price-table td { max-width: 285px; vertical-align: top; }
+.price-table td:nth-child(3) { min-width: 160px; white-space: normal; overflow-wrap: anywhere; }
+.price-table td:nth-child(4) { min-width: 170px; }
+.offer-conditions { font-size: 11px; margin-top: 8px; max-width: 260px; white-space: normal; }
+.offer-conditions summary { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.offer-conditions ul { padding-left: 17px; line-height: 1.6; }
+.price-pagination { display: flex; align-items: center; justify-content: center; gap: 24px; padding: 22px 10px; font-size: 12px; }
+.price-pagination button { border: 1px solid #d8d9d1; background: transparent; padding: 10px 14px; cursor: pointer; }
+.price-pagination button:disabled { opacity: .35; cursor: default; }
+.result-controls { flex-wrap: wrap; }
+@media (max-width: 900px) { .price-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .result-toolbar { align-items: flex-start; gap: 15px; } }
+@media (max-width: 520px) { .price-filter-grid { grid-template-columns: minmax(0, 1fr); } .price-filter-grid .search-field { grid-column: auto; } .result-controls { align-items: flex-start; gap: 12px; } }
+.fx-disclosure { padding-top: 30px; padding-bottom: 30px; border-top: 1px solid #d8d9d1; font-size: 12px; line-height: 1.7; }
+.fx-disclosure strong { display: block; font-size: 14px; }
+.fx-disclosure p { max-width: 920px; color: #686b65; }
+.fx-disclosure ul { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 0; list-style: none; }
+.fx-disclosure a { text-decoration: underline; text-underline-offset: 3px; }
+.price-cell small { max-width: 280px; white-space: normal; line-height: 1.6; }

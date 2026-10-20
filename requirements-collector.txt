@@ -1,0 +1,2 @@
+# Public collectors only; a fixed commit makes CI and local runs reproducible.
+flatkey-gpu-price-monitor[browser] @ git+https://github.com/flatkey-ai/gpu-price-monitor.git@c67cc8edfb7b7418f2dd0f1bb4b9ce6ed2238326
