@@ -1,6 +1,6 @@
-import { offers } from "@/lib/data";
+import type { Offer } from "@/lib/data";
 
-export function FxDisclosure() {
+export function FxDisclosure({ offers }: { offers: Offer[] }) {
   const rates = [...new Map(offers.filter((offer) => offer.sourceCurrency !== "USD" && offer.fx)
     .map((offer) => [`${offer.sourceCurrency}|${offer.fx!.rateDate}|${offer.fx!.rateToUsd}`, { currency: offer.sourceCurrency, ...offer.fx! }])).values()];
   return <aside className="fx-disclosure shell" aria-label="USD conversion methodology">

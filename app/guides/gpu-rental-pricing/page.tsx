@@ -1,9 +1,11 @@
+export const dynamic = "force-dynamic";
+
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getCheapestOffer } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
 import { formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
-
 
 export const metadata: Metadata = {
   title: "GPU rental pricing guide: compare cost per hour",
@@ -36,7 +38,10 @@ const faqItems = [
   },
 ];
 
-export default function GpuRentalPricingGuide() {
+export default async function GpuRentalPricingGuide() {
+  const snapshot = await getPricingSnapshot();
+  const { getCheapestOffer } = snapshot;
+
   const h100 = getCheapestOffer("nvidia-h100");
   const a100 = getCheapestOffer("nvidia-a100");
 
@@ -172,6 +177,7 @@ export default function GpuRentalPricingGuide() {
           </section>
         </article>
       </div>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

@@ -1,9 +1,11 @@
+export const dynamic = "force-dynamic";
+
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getGpu, getOffersForRegion, getProvider, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
-
 
 export const metadata: Metadata = {
   title: "GPU cloud regions and rental prices",
@@ -17,7 +19,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RegionsIndexPage() {
+export default async function RegionsIndexPage() {
+  const snapshot = await getPricingSnapshot();
+  const { getGpu, getOffersForRegion, getProvider, getRegionCoverage, isRegionIndexable, regions } = snapshot;
+
   return (
     <main className="directory-page">
       <section className="directory-hero shell">
@@ -87,6 +92,7 @@ export default function RegionsIndexPage() {
           <a className="button button-primary" href={flatkeyWebsiteUrl("region_directory_quote")} target="_blank" rel="sponsored nofollow noreferrer">Discuss a region with Flatkey <span>↗</span></a>
         </div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

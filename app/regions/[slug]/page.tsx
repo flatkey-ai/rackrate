@@ -1,18 +1,18 @@
+export const dynamic = "force-dynamic";
+
 import { PriceExplorer } from "@/components/price-explorer";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getOffersForRegion, getRegion, getRegionCoverage, isRegionIndexable, regions } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
-export function generateStaticParams() {
-  return regions.map((region) => ({ slug: region.slug }));
-}
-
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { getRegion, isRegionIndexable } = await getPricingSnapshot();
   const region = getRegion((await params).slug);
   if (!region) return {};
   const title = region.slug === "global"
@@ -29,6 +29,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function RegionDetailPage({ params }: PageProps) {
+  const snapshot = await getPricingSnapshot();
+  const { getOffersForRegion, getRegion, getRegionCoverage, isRegionIndexable, regions } = snapshot;
+  const explorerData = { offers: snapshot.offers, gpus: snapshot.gpus, providers: snapshot.providers, generatedAt: snapshot.generatedAt, sources: snapshot.sources };
+
   const region = getRegion((await params).slug);
   if (!region) notFound();
   const regionOffers = getOffersForRegion(region.slug);
@@ -96,7 +100,7 @@ export default async function RegionDetailPage({ params }: PageProps) {
 
       <section className="region-offers shell">
         <div className="detail-section-heading"><div><span className="eyebrow">Regional price board</span><h2>{regionOffers.length} indexed configuration{regionOffers.length === 1 ? "" : "s"}</h2></div><p>Only source-published location labels are used. USD prices retain original amounts, dated FX rates, billing periods and price bases.</p></div>
-        {regionOffers.length === 0 ? <div className="empty-state"><strong>No sourced prices indexed for {region.name} yet.</strong><span>Use the location checklist below and confirm the facility and capacity.</span></div> : <PriceExplorer regionNames={[...new Set(regionOffers.flatMap((offer) => offer.regions))]} />}
+        {regionOffers.length === 0 ? <div className="empty-state"><strong>No sourced prices indexed for {region.name} yet.</strong><span>Use the location checklist below and confirm the facility and capacity.</span></div> : <PriceExplorer {...explorerData} regionNames={[...new Set(regionOffers.flatMap((offer) => offer.regions))]} />}
         <div className="coverage-disclosure"><strong>Check the location and capacity before committing.</strong><p>Indexed rates are dated observations. Ask Flatkey to confirm your requested region, quantity, machine specification, price and delivery conditions in a formal quote; the regional rates above remain a separate market benchmark.</p></div>
       </section>
 
@@ -130,6 +134,7 @@ export default async function RegionDetailPage({ params }: PageProps) {
         <div className="directory-intro"><div><span className="eyebrow">Buyer questions</span><h2>Before the region becomes a commitment.</h2></div><p>These answers reflect the coverage visible on this page, not a confirmation of current inventory.</p></div>
         <div className="faq-list">{faqs.map((faq) => <details key={faq.question}><summary>{faq.question}</summary><p>{faq.answer}</p></details>)}</div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

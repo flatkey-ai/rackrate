@@ -1,8 +1,11 @@
 import type { MetadataRoute } from "next";
-import { gpus, isRegionIndexable, providers, regions } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { absoluteUrl } from "@/lib/site";
 
+export const dynamic = "force-dynamic";
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const { gpus, isRegionIndexable, providers, regions } = await getPricingSnapshot();
   const staticRoutes: MetadataRoute.Sitemap = [
     { path: "/", priority: 1 },
     { path: "/gpus", priority: 0.9 },

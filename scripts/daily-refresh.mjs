@@ -15,12 +15,20 @@ export function collectionIsDue(snapshot, now = new Date()) {
   return REQUIRED_PROVIDERS.some((provider) => !successful.has(provider));
 }
 
+export function shouldCollectPrices(snapshot, {
+  now = new Date(), ref = "refs/heads/main", eventName = "schedule", forceRefresh = false,
+} = {}) {
+  const forced = eventName === "workflow_dispatch" && (forceRefresh === true || forceRefresh === "true");
+  return ref !== "refs/heads/main" || forced || collectionIsDue(snapshot, now);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let snapshot;
   try { snapshot = JSON.parse(await readFile(new URL("../data/public-prices.json", import.meta.url), "utf8")); }
   catch { snapshot = null; }
   // Branch runs always exercise the real collectors before a change is merged.
-  const due = process.env.GITHUB_REF !== "refs/heads/main" || collectionIsDue(snapshot);
+  const due = shouldCollectPrices(snapshot, { ref: process.env.GITHUB_REF,
+    eventName: process.env.GITHUB_EVENT_NAME, forceRefresh: process.env.GPU_PRICE_FORCE_REFRESH });
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `collect=${due}\n`);
   console.log(due ? "A new verified public collection is due." : "Today's post-10:30 China-time collection is already verified; skipping a duplicate fetch.");
 }

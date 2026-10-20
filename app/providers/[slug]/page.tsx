@@ -1,19 +1,19 @@
+export const dynamic = "force-dynamic";
+
 import { PriceExplorer } from "@/components/price-explorer";
 import type { Metadata } from "next";
 import { FlatkeyProfile } from "@/components/flatkey-profile";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getOffersForProvider, getProvider, providers } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
-export function generateStaticParams() {
-  return providers.map((provider) => ({ slug: provider.slug }));
-}
-
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { getProvider } = await getPricingSnapshot();
   const provider = getProvider((await params).slug);
   if (!provider) return {};
   const title = provider.slug === "flatkey" ? "Flatkey Compute: GPU capacity and quote requests" : `${provider.name} GPU rental prices and cloud costs`;
@@ -27,6 +27,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ProviderPage({ params }: PageProps) {
+  const snapshot = await getPricingSnapshot();
+  const { getOffersForProvider, getProvider, providers } = snapshot;
+  const explorerData = { offers: snapshot.offers, gpus: snapshot.gpus, providers: snapshot.providers, generatedAt: snapshot.generatedAt, sources: snapshot.sources };
+
   const provider = getProvider((await params).slug);
   if (!provider) notFound();
   if (provider.slug === "flatkey") return <FlatkeyProfile />;
@@ -57,9 +61,10 @@ export default async function ProviderPage({ params }: PageProps) {
 
       <section className="detail-content shell">
         <div className="detail-section-heading"><div><span className="eyebrow">Sourced catalogue</span><h2>Indexed GPU configurations</h2></div><p>Prices display in USD with original amounts and dated exchange rates attached. Monthly periods remain separate. Show every record to include offline prices.</p></div>
-        <PriceExplorer providerSlug={provider.slug} />
+        <PriceExplorer {...explorerData} providerSlug={provider.slug} />
         <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Pricing guide</span><strong>Evaluate the full cost per GPU-hour →</strong></Link><Link href="/providers"><span>Provider directory</span><strong>Compare other GPU clouds →</strong></Link></div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

@@ -4,12 +4,13 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEv
 
 type SelectOption = { value: string; label: string; description?: string };
 
-export function FilterSelect({ label, value, options, onChange }: {
+export function FilterSelect({ label, value, options: suppliedOptions, onChange }: {
   label: string;
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
 }) {
+  const options = suppliedOptions.some((option) => option.value === value) ? suppliedOptions : [...suppliedOptions, { value, label: `Selected: ${value}`, description: "No current matching option" }];
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
