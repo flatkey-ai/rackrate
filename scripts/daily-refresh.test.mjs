@@ -1,0 +1,22 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { collectionIsDue } from "./daily-refresh.mjs";
+import { REQUIRED_PROVIDERS } from "./lib/library.mjs";
+
+function snapshot(collectedAt) {
+  return { status:"success", collected_at:collectedAt, provider_results:REQUIRED_PROVIDERS.map(provider=>({provider,status:"success",error:null,returned_count:1})) };
+}
+test("one verified post-10:30 Shanghai collection prevents scheduled/manual duplicates",()=>{
+  const now=new Date("2026-10-20T02:45:00Z");
+  assert.equal(collectionIsDue(snapshot("2026-10-20T02:30:00Z"),now),false);
+  assert.equal(collectionIsDue(snapshot("2026-10-20T02:29:59Z"),now),true);
+  assert.equal(collectionIsDue(snapshot("2026-10-19T03:00:00Z"),now),true);
+});
+test("failed, future or incomplete snapshots never suppress a fresh collection",()=>{
+  const now=new Date("2026-10-20T02:45:00Z");
+  assert.equal(collectionIsDue(null,now),true);
+  assert.equal(collectionIsDue({...snapshot("2026-10-20T02:40:00Z"),status:"partial"},now),true);
+  const incomplete=snapshot("2026-10-20T02:40:00Z");incomplete.provider_results.pop();
+  assert.equal(collectionIsDue(incomplete,now),true);
+  assert.equal(collectionIsDue(snapshot("2026-10-20T03:00:00Z"),now),true);
+});
