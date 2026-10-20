@@ -2,12 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Offer } from "./data";
 
-const { cheapestComparableOffer, compareOffers, formatOfferPrice, formatInstancePrice, formatOriginalPrice, isComparableUsdHourly } = await import(new URL("./pricing.ts", import.meta.url).href);
+const { cheapestComparableOffer, compareOffers, formatOfferPrice, formatInstancePrice, formatOriginalPrice, isComparableUsdHourly, hasEligibilityConditions } = await import(new URL("./pricing.ts", import.meta.url).href);
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "ordinary", gpuSlug: "nvidia-h100", providerSlug: "example", gpuCount: null, gpuVariant: null, vramGb: null,
   pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "Not published", regions: [], zones: [], countryCode: "",
   availability: "unknown", egress: "Not published", sourceUrl: "https://example.com/prices", observedAt: "2026-10-20T08:00:00Z",
   sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
+});
+test("eligibility badges and filtering retain regional and membership restrictions", () => {
+  const regional = quote({ sourceCurrency: "ILS", conditions: ["ILS prices apply to companies from Israel"] });
+  const member = quote({ membershipRequired: true });
+  assert.equal(hasEligibilityConditions(regional), true);
+  assert.equal(hasEligibilityConditions(member), true);
+  assert.equal(hasEligibilityConditions(quote()), false);
+  assert.equal(isComparableUsdHourly(member), false);
 });
 
 test("USD on-demand benchmarks exclude incompatible and ineligible cheaper quotes", () => {

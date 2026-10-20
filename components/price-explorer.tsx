@@ -1,26 +1,48 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import { gpuMemoryLabel, type Gpu, type Offer, type PricingDataset, type Provider } from "@/lib/data";
-import { availabilityLabel, billingUnitLabel, compareOffers, configurationLabel, formatFxRate, formatInstancePrice, formatOfferPrice, formatOriginalInstancePrice, formatOriginalPrice, priceBasisLabel } from "@/lib/pricing";
+import { availabilityLabel, billingUnitLabel, compareOffers, formatAmount, formatOfferPrice, priceBasisLabel, hasEligibilityConditions as conditional } from "@/lib/pricing";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 import { trackSiteEvent } from "@/components/site-analytics";
 import { FilterSelect } from "@/components/filter-select";
-import { FlatkeyRecommendation } from "@/components/flatkey-recommendation";
+import { OfferDetails } from "@/components/offer-details";
+import styles from "./price-explorer.module.css";
 
-const observedDate = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 const unique = (items: string[]) => [...new Set(items)].sort();
 
 export type PriceExplorerData = {
-  offers: Offer[];
-  gpus: Gpu[];
-  providers: Provider[];
-  generatedAt: string;
-  sources: PricingDataset["sources"];
+  offers: Offer[]; gpus: Gpu[]; providers: Provider[];
+  generatedAt: string; sources: PricingDataset["sources"];
 };
 
+function Chevron({ open = false }: { open?: boolean }) {
+  return <svg viewBox="0 0 20 20" aria-hidden="true" data-open={open}><path d="m6 8 4 4 4-4" /></svg>;
+}
+
+function OfferPrice({ offer }: { offer: Offer }) {
+  return <div className={styles.price}>
+    <strong>{formatOfferPrice(offer)}</strong>
+    <span>per {billingUnitLabel(offer)}</span>
+    {offer.sourceCurrency !== "USD" && offer.pricePerGpuUnit !== null && <small>{formatAmount(offer.pricePerGpuUnit, offer.sourceCurrency)} original · FX {offer.fx?.rateDate ?? "unavailable"}</small>}
+  </div>;
+}
+
+function OfferTerms({ offer }: { offer: Offer }) {
+  return <div className={styles.terms}>
+    <span className={styles.plan}>{offer.rentalType}{offer.cloudTier ? ` · ${offer.cloudTier}` : ""}</span>
+    <div className={styles.badges}>
+      <span className={`${styles.status} ${offer.availability === "unavailable" ? styles.offline : ""}`} data-availability={offer.dataStatus === "seed" ? "unknown" : offer.availability}><i />{offer.dataStatus === "seed" ? "Historical reference" : availabilityLabel[offer.availability]}</span>
+      {conditional(offer) && <span className={styles.conditional}>{/member|会员/i.test(offer.conditions.join(" ")) ? "Member rate" : "Conditions apply"}</span>}
+      {offer.priceBasis === "gpu_component" && <span className={styles.conditional}>GPU component</span>}
+      {offer.quoteStatus === "starting_at" && <span className={styles.conditional}>Starting price</span>}
+    </div>
+  </div>;
+}
+
 export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, gpuSlug, providerSlug, regionNames }: PriceExplorerData & { gpuSlug?: string; providerSlug?: string; regionNames?: string[] }) {
+  const id = useId();
   const freshness = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(generatedAt));
   const automatedSourceCount = sources.filter((source) => source.status === "ok").length;
   const scopedOffers = useMemo(() => offers.filter((offer) => (!gpuSlug || offer.gpuSlug === gpuSlug) && (!providerSlug || offer.providerSlug === providerSlug) && (!regionNames || offer.regions.some((entry) => regionNames.includes(entry)))), [offers, gpuSlug, providerSlug, regionNames]);
@@ -37,54 +59,107 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
   const [availableOnly, setAvailableOnly] = useState(!isScoped);
   const [hideConditional, setHideConditional] = useState(false);
   const [page, setPage] = useState(1);
+  const [advanced, setAdvanced] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const regionOptions = useMemo(() => unique(scopedOffers.flatMap((offer) => offer.regions)), [scopedOffers]);
   const zoneOptions = useMemo(() => unique(scopedOffers.flatMap((offer) => offer.zones)), [scopedOffers]);
   const currencies = useMemo(() => unique(scopedOffers.map((offer) => offer.sourceCurrency)), [scopedOffers]);
-  const filtered = useMemo(() => {
+  const gpuMap = useMemo(() => new Map(gpus.map((entry) => [entry.slug, entry])), [gpus]);
+  const providerMap = useMemo(() => new Map(providers.map((entry) => [entry.slug, entry])), [providers]);
+  const matchedOffers = useMemo(() => {
     const term = query.trim().toLowerCase();
     return scopedOffers.filter((offer) => {
-      const gpuEntry = gpus.find((entry) => entry.slug === offer.gpuSlug);
-      const providerEntry = providers.find((entry) => entry.slug === offer.providerSlug);
-      const haystack = `${gpuEntry?.name} ${offer.rawGpuModel ?? ""} ${offer.gpuVariant ?? ""} ${providerEntry?.name} ${offer.region} ${offer.zones.join(" ")} ${offer.conditions.join(" ")}`.toLowerCase();
+      const haystack = `${gpuMap.get(offer.gpuSlug)?.name} ${offer.rawGpuModel ?? ""} ${offer.gpuVariant ?? ""} ${providerMap.get(offer.providerSlug)?.name} ${offer.region} ${offer.zones.join(" ")} ${offer.conditions.join(" ")}`.toLowerCase();
       return (!term || haystack.includes(term)) && (gpu === "all" || offer.gpuSlug === gpu)
         && (provider === "all" || offer.providerSlug === provider) && (rental === "all" || offer.rentalType === rental)
         && (currency === "all" || offer.sourceCurrency === currency) && (unit === "all" || offer.billingUnit === unit)
         && (region === "all" || (region === "__unpublished" ? offer.regions.length === 0 : offer.regions.includes(region))) && (zone === "all" || (zone === "__unpublished" ? offer.zones.length === 0 : offer.zones.includes(zone)))
-        && (basis === "all" || offer.priceBasis === basis) && (!availableOnly || offer.availability !== "unavailable")
-        && (!hideConditional || !offer.conditions.some((condition) => /member|会员|new.customer|新客|commitment|reserved/i.test(condition)));
+        && (basis === "all" || offer.priceBasis === basis)
+        && (!hideConditional || !conditional(offer));
     }).sort(compareOffers);
-  }, [scopedOffers, gpus, providers, query, gpu, provider, rental, currency, unit, region, zone, basis, availableOnly, hideConditional]);
-  const pageSize = 50;
+  }, [scopedOffers, gpuMap, providerMap, query, gpu, provider, rental, currency, unit, region, zone, basis, hideConditional]);
+  const filtered = useMemo(() => matchedOffers.filter((offer) => !availableOnly || offer.availability !== "unavailable"), [matchedOffers, availableOnly]);
+  const pageSize = 25;
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const change = (filter: string, setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); trackSiteEvent("price_filter_changed", { filter, value }); };
   const resetFilters = () => { setQuery(""); setGpu("all"); setProvider("all"); setRental(isScoped ? "all" : "On-demand"); setCurrency("all"); setUnit(isScoped ? "all" : "GPU-hour"); setRegion("all"); setZone("all"); setBasis("all"); setAvailableOnly(!isScoped); setHideConditional(false); setPage(1); };
-  const showAll = () => { resetFilters(); setRental("all"); setCurrency("all"); setUnit("all"); setAvailableOnly(false); };
+  const changePeriod = (value: string) => {
+    change("unit", setUnit)(value);
+    if ((value === "GPU-month" && rental === "On-demand") || (value === "GPU-hour" && rental === "Monthly")) setRental("all");
+  };
+  const showAll = () => { resetFilters(); setRental("all"); setUnit("all"); setAvailableOnly(false); };
+  const advancedCount = Number(currency !== "all") + Number(rental !== "all") + Number(zone !== "all") + Number(basis !== "all") + Number(hideConditional);
+  const activeChips = [
+    ...(rental !== "all" ? [{ label: rental, clear: () => change("rental", setRental)("all") }] : []),
+    ...(currency !== "all" ? [{ label: `Original: ${currency}`, clear: () => change("currency", setCurrency)("all") }] : []),
+    ...(zone !== "all" ? [{ label: zone === "__unpublished" ? "Zone not published" : zone, clear: () => change("zone", setZone)("all") }] : []),
+    ...(basis !== "all" ? [{ label: priceBasisLabel({ priceBasis: basis } as Offer), clear: () => change("basis", setBasis)("all") }] : []),
+    ...(hideConditional ? [{ label: "No eligibility rates", clear: () => { setHideConditional(false); setPage(1); } }] : []),
+  ];
+  const configuration = (offer: Offer) => [offer.vramGb !== null ? `${offer.vramGb} GB` : null, offer.gpuVariant, offer.gpuCount !== null ? `${offer.gpuCount}× GPU` : null].filter(Boolean).join(" · ") || "See configuration details";
+  const toggleDetails = (offerId: string) => setExpanded(expanded === offerId ? null : offerId);
 
-  return <div className="explorer-card">
-    <div className="explorer-head"><div><span className="eyebrow">Market scanner / sourced feed</span><h2>Compare GPU prices with the terms attached.</h2></div><div className="freshness"><span /> Collected {freshness} China time</div></div>
-    <FlatkeyRecommendation content="comparison_recommended" />
-    <div className="filter-bar price-filter-grid">
-      <label className="search-field"><span className="sr-only">Search offers</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15A7.5 7.5 0 1 1 4 11.5a7.5 7.5 0 0 1 15 0Z" /></svg><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search model, variant, platform, region" /></label>
-      {!gpuSlug && <FilterSelect label="GPU" value={gpu} options={[{ value: "all", label: "All GPUs" }, ...gpus.filter((entry) => scopedOffers.some((offer) => offer.gpuSlug === entry.slug)).map((entry) => ({ value: entry.slug, label: entry.shortName, description: gpuMemoryLabel(entry) }))]} onChange={change("gpu", setGpu)} />}
-      {!providerSlug && <FilterSelect label="Platform" value={provider} options={[{ value: "all", label: "All platforms" }, ...providers.filter((entry) => scopedOffers.some((offer) => offer.providerSlug === entry.slug)).map((entry) => ({ value: entry.slug, label: entry.name }))]} onChange={change("provider", setProvider)} />}
-      <FilterSelect label="Original currency" value={currency} options={[{ value: "all", label: "All source currencies" }, ...currencies.map((entry) => ({ value: entry, label: entry }))]} onChange={change("currency", setCurrency)} />
-      <FilterSelect label="Billing period" value={unit} options={[{ value: "all", label: "All periods" }, { value: "GPU-hour", label: "Per GPU-hour" }, { value: "GPU-month", label: "Per GPU-month" }]} onChange={change("unit", setUnit)} />
-      <FilterSelect label="Purchase model" value={rental} options={[{ value: "all", label: "All types" }, ...unique(scopedOffers.map((offer) => offer.rentalType)).map((entry) => ({ value: entry, label: entry }))]} onChange={change("rental", setRental)} />
-      <FilterSelect label="Region" value={region} options={[{ value: "all", label: "All regions" }, { value: "__unpublished", label: "Region not published" }, ...regionOptions.map((entry) => ({ value: entry, label: entry }))]} onChange={change("region", setRegion)} />
-      <FilterSelect label="Availability zone" value={zone} options={[{ value: "all", label: "All zones" }, { value: "__unpublished", label: "Zone not published" }, ...zoneOptions.map((entry) => ({ value: entry, label: entry }))]} onChange={change("zone", setZone)} />
-      <FilterSelect label="Price basis" value={basis} options={[{ value: "all", label: "All bases" }, ...unique(scopedOffers.map((offer) => offer.priceBasis)).map((entry) => ({ value: entry, label: priceBasisLabel({ priceBasis: entry } as never) }))]} onChange={change("basis", setBasis)} />
+  return <section className={styles.explorer} aria-label="GPU price comparison">
+    <header className={styles.header}>
+      <div><span className={styles.eyebrow}>THE PRICE BOARD</span><h2>Compare GPU prices.</h2><p>Find your GPU. Compare the price and the terms.</p></div>
+      <div className={styles.updated}><span>{automatedSourceCount} public sources <i /> Daily refresh</span><time dateTime={generatedAt}>Collected {freshness}</time><small>China time · UTC+8</small></div>
+    </header>
+    <div className={styles.filters}>
+      <div className={styles.searchLine}>
+        <div className={styles.search}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.15A7.5 7.5 0 1 1 4 11.5a7.5 7.5 0 0 1 15 0Z" /></svg><input aria-label="Search offers" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search GPU, platform or region…" />{query && <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1); }}>×</button>}</div>
+        <button className={`${styles.moreFilters} ${advanced ? styles.moreFiltersOpen : ""}`} type="button" aria-expanded={advanced} aria-controls={advanced ? `${id}-advanced` : undefined} onClick={() => setAdvanced(!advanced)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14M7 3v4m6 1v4m-6 1v4" /></svg>More filters{advancedCount > 0 && <span>{advancedCount}</span>}<Chevron open={advanced} /></button>
+      </div>
+      <div className={styles.primaryFilters}>
+        {!gpuSlug && <FilterSelect label="GPU" value={gpu} options={[{ value: "all", label: "All GPUs" }, ...gpus.filter((entry) => scopedOffers.some((offer) => offer.gpuSlug === entry.slug)).map((entry) => ({ value: entry.slug, label: entry.shortName, description: gpuMemoryLabel(entry) }))]} onChange={change("gpu", setGpu)} />}
+        {!providerSlug && <FilterSelect label="Platform" value={provider} options={[{ value: "all", label: "All platforms" }, ...providers.filter((entry) => scopedOffers.some((offer) => offer.providerSlug === entry.slug)).map((entry) => ({ value: entry.slug, label: entry.name }))]} onChange={change("provider", setProvider)} />}
+        <FilterSelect label="Region" value={region} options={[{ value: "all", label: "All regions" }, { value: "__unpublished", label: "Region not published" }, ...regionOptions.map((entry) => ({ value: entry, label: entry }))]} onChange={change("region", setRegion)} />
+        <FilterSelect label="Billing period" value={unit} options={[{ value: "all", label: "All periods" }, { value: "GPU-hour", label: "Per GPU-hour" }, { value: "GPU-month", label: "Per GPU-month" }]} onChange={changePeriod} />
+      </div>
+      {advanced && <div className={styles.advanced} id={`${id}-advanced`}>
+        <div className={styles.advancedFilters}>
+          <FilterSelect label="Original currency" value={currency} options={[{ value: "all", label: "All source currencies" }, ...currencies.map((entry) => ({ value: entry, label: entry }))]} onChange={change("currency", setCurrency)} />
+          <FilterSelect label="Purchase model" value={rental} options={[{ value: "all", label: "All types" }, ...unique(scopedOffers.map((offer) => offer.rentalType)).map((entry) => ({ value: entry, label: entry }))]} onChange={change("rental", setRental)} />
+          <FilterSelect label="Availability zone" value={zone} options={[{ value: "all", label: "All zones" }, { value: "__unpublished", label: "Zone not published" }, ...zoneOptions.map((entry) => ({ value: entry, label: entry }))]} onChange={change("zone", setZone)} />
+          <FilterSelect label="Price basis" value={basis} options={[{ value: "all", label: "All bases" }, ...unique(scopedOffers.map((offer) => offer.priceBasis)).map((entry) => ({ value: entry, label: priceBasisLabel({ priceBasis: entry } as Offer) }))]} onChange={change("basis", setBasis)} />
+        </div>
+        <label className={styles.check}><input type="checkbox" checked={hideConditional} onChange={(event) => { setHideConditional(event.target.checked); setPage(1); }} />Hide member / eligibility rates</label>
+      </div>}
+      {activeChips.length > 0 && <div className={styles.chips} aria-label="Active filters">{activeChips.map((chip) => <button key={chip.label} type="button" onClick={chip.clear} aria-label={`Remove ${chip.label} filter`}>{chip.label}<span aria-hidden="true">×</span></button>)}</div>}
     </div>
-    <div className="result-toolbar"><p><strong>{filtered.length}</strong> matching / {scopedOffers.length} sourced records</p><div className="result-controls"><button type="button" className="reset-filters" onClick={showAll}>Show every sourced record</button><button type="button" className="reset-filters" onClick={resetFilters}>Reset filters</button><label className="check-control"><input type="checkbox" checked={availableOnly} onChange={(event) => { setAvailableOnly(event.target.checked); setPage(1); }} /><span aria-hidden="true" />Hide offline listings</label><label className="check-control"><input type="checkbox" checked={hideConditional} onChange={(event) => { setHideConditional(event.target.checked); setPage(1); }} /><span aria-hidden="true" />Hide member / eligibility rates</label></div></div>
-    <div className="source-legend"><div><strong>USD display, original prices preserved</strong><span>Headline amounts use USD. Converted amounts are marked ≈. Each converted row shows its original currency, exchange rate, reference date and source; exact decimal values are expandable. Daily ECB reference rates are indicative; payment fees are excluded. Monthly prices stay per month. Rows are grouped by billing period, purchase model and price basis before USD sorting.</span></div><div><strong>Public price ≠ bookable inventory</strong><span>Offline records remain accessible. Stock unknown means the source did not confirm availability. Member, cloud tier and eligibility terms remain attached.</span></div></div>
-    <div className="table-scroll-hint" aria-hidden="true"><span>Swipe to compare all columns</span><i>→</i></div>
-    <div className="price-table-wrap" tabIndex={0} role="region" aria-label="Scrollable GPU price comparison table"><table className="price-table"><thead><tr><th>GPU / platform</th><th>Variant / configuration</th><th>Region / zone</th><th>Terms / basis</th><th>Status</th><th className="numeric">USD per-GPU price / original</th></tr></thead><tbody>{visible.map((offer) => {
-      const gpuEntry = gpus.find((entry) => entry.slug === offer.gpuSlug)!;
-      const providerEntry = providers.find((entry) => entry.slug === offer.providerSlug)!;
-      return <tr key={offer.id}><td><Link className="gpu-link" href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><Link className="provider-link" href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link><span className="offer-evidence"><a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "official-page" ? "Official public source" : "Dated reference"} ↗</a><time dateTime={offer.observedAt}>{observedDate.format(new Date(offer.observedAt))}</time></span></td><td><strong>{offer.rawGpuModel ?? offer.gpuModel ?? gpuEntry.shortName}</strong><small className="cell-detail">{configurationLabel(offer)}</small>{offer.rawSku && <small className="cell-detail">SKU: {offer.rawSku}</small>}{offer.resources && Object.keys(offer.resources).length > 0 && <details className="offer-conditions"><summary>Published configuration</summary><ul>{Object.entries(offer.resources).map(([key, value]) => <li key={key}>{key.replaceAll("_", " ")}: {typeof value === "object" ? JSON.stringify(value) : String(value)}</li>)}</ul></details>}</td><td>{offer.countryCode && <span className="country-code">{offer.countryCode}</span>}{offer.regions.length ? offer.regions.join(" · ") : "Not published"}<small className="cell-detail">{offer.zones.length ? `Zone: ${offer.zones.join(" · ")}` : "Zone not published"}</small><small className="cell-detail">Scope: {offer.regionScope ?? offer.geographicScope ?? "Not published"}</small></td><td>{offer.rentalType}{offer.cloudTier && <small className="cell-detail">Cloud tier: {offer.cloudTier}</small>}{offer.pricingTier && <small className="cell-detail">Price tier: {offer.pricingTier}</small>}{offer.conditions.some((condition) => /member|会员/i.test(condition)) && <small className="cell-detail">Member / eligibility conditions apply</small>}<small className="cell-detail">{priceBasisLabel(offer)}</small>{offer.conditions.length > 0 && <details className="offer-conditions"><summary>{offer.conditions.length} source conditions</summary><ul>{offer.conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul></details>}</td><td><span className={`status ${offer.dataStatus === "seed" ? "unknown" : offer.availability}`}><i />{offer.dataStatus === "seed" ? "Reference / not live" : availabilityLabel[offer.availability]}</span><small className="cell-detail">{offer.dataStatus === "seed" ? "Historical observation; current stock not checked" : offer.quoteStatus === "starting_at" ? "Starting price" : offer.quoteStatus === "contact_sales" ? "Sales quote required" : "Published quote"}</small></td><td className="numeric price-cell"><strong>{formatOfferPrice(offer)}</strong><small>/ {billingUnitLabel(offer)} · {offer.sourceCurrency === "USD" ? "native USD" : "converted to USD"}</small><small>{formatOriginalPrice(offer)}</small><small>{offer.fx && offer.sourceCurrency !== "USD" ? <a href={offer.fx.sourceUrl} target="_blank" rel="nofollow noreferrer">{formatFxRate(offer)} · {offer.fx.sourceName} ↗</a> : formatFxRate(offer)}</small><small>{formatInstancePrice(offer)}</small>{offer.instancePrice != null && offer.sourceCurrency !== "USD" && <small>{formatOriginalInstancePrice(offer)}</small>}{offer.sourceAmount && <details className="offer-conditions"><summary>Exact source / conversion</summary><small>Source: {offer.sourceAmount} {offer.sourceCurrency} / {billingUnitLabel(offer)}</small>{offer.usdSourceAmount && <small>USD decimal: {offer.usdSourceAmount}</small>}{offer.fx?.rateToUsdDecimal && <small>Exact FX: {offer.fx.rateToUsdDecimal}</small>}{offer.fx?.formula && <small>{offer.fx.formula}</small>}{offer.fx?.rounding && <small>Rounding: {offer.fx.rounding}</small>}</details>}</td></tr>;
-    })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No records match these filters.</strong><span>Use “Show every sourced record” to include all currencies, monthly packages and offline prices.</span></div>}</div>
-    {filtered.length > pageSize && <div className="price-pagination"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>← Previous</button><span>Page {currentPage} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={currentPage * pageSize >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next →</button></div>}
-    <div className="table-footnote"><span>{automatedSourceCount} successful public sources · USD via dated ECB reference rates · Original periods and source timestamps preserved.</span><div><Link href="/methodology">How comparison works →</Link><a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report a data issue ↗</a></div></div>
-    <div className="explorer-conversion"><div><strong>Have a configuration in mind?</strong><span>Take the GPU, region and duration to Flatkey for a formal quote.</span></div><a className="button button-primary" href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a></div>
-  </div>;
+    <div className={styles.results}>
+      <p aria-live="polite"><strong>{filtered.length.toLocaleString("en-US")}</strong> offers <span>of {scopedOffers.length.toLocaleString("en-US")} sourced</span></p>
+      <div className={styles.resultActions}><label className={styles.check}><input type="checkbox" checked={availableOnly} onChange={(event) => { setAvailableOnly(event.target.checked); setPage(1); }} />Hide offline</label><button type="button" onClick={resetFilters}>Reset</button><button type="button" onClick={showAll}>Show all</button></div>
+    </div>
+    <div className={styles.usdNote}><span><strong>USD</strong> per GPU · <span>≈ converted price, original currency preserved</span></span><details><summary>About these prices <Chevron /></summary><p>Daily ECB reference rates include their publication date and source in each offer’s details. Monthly prices stay monthly. Results are sorted by USD price within billing period, purchase model and price basis. A listed price does not confirm inventory; member rates, offline offers and historical references are labeled. <Link href="/methodology">Read the methodology ↗</Link></p></details></div>
+    <div className={styles.desktopResults}>
+      <table className={styles.table}><caption className="sr-only">GPU prices with their configuration, region, terms, USD amount and original currency</caption><thead><tr><th scope="col">GPU / Platform</th><th scope="col">Region / Zone</th><th scope="col">Plan / Availability</th><th scope="col" className={styles.priceHeading}>Price in USD</th><th scope="col"><span className="sr-only">Offer details</span></th></tr></thead><tbody>{visible.map((offer) => {
+        const gpuEntry = gpuMap.get(offer.gpuSlug)!;
+        const providerEntry = providerMap.get(offer.providerSlug)!;
+        const open = expanded === offer.id;
+        return <Fragment key={offer.id}><tr className={open ? styles.selectedRow : undefined}>
+          <td><Link className={styles.gpuName} href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><div className={styles.modelMeta}><Link href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link><span>·</span><span>{configuration(offer)}</span></div></td>
+          <td><span className={styles.location}>{offer.regions.length ? offer.regions.join(" · ") : "Not published"}</span>{offer.zones.length > 0 && <small className={styles.zone}>{offer.zones.join(" · ")}</small>}</td>
+          <td><OfferTerms offer={offer} /></td>
+          <td><OfferPrice offer={offer} /></td>
+          <td><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpuEntry.shortName} on ${providerEntry.name} details`} aria-expanded={open} aria-controls={open ? `${id}-desktop-${offer.id}` : undefined} onClick={() => toggleDetails(offer.id)}>Details<Chevron open={open} /></button></td>
+        </tr>{open && <tr className={styles.expandedRow} id={`${id}-desktop-${offer.id}`}><td colSpan={5}><div className={styles.details}><OfferDetails offer={offer} /></div></td></tr>}</Fragment>;
+      })}</tbody></table>
+    </div>
+    <div className={styles.mobileResults} aria-label="GPU price offers">{visible.map((offer) => {
+      const gpuEntry = gpuMap.get(offer.gpuSlug)!;
+      const providerEntry = providerMap.get(offer.providerSlug)!;
+      const open = expanded === offer.id;
+      return <article key={offer.id} className={styles.offerCard}>
+        <div className={styles.cardTop}><div><Link className={styles.gpuName} href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><Link className={styles.provider} href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link></div><OfferPrice offer={offer} /></div>
+        <div className={styles.cardConfiguration}>{configuration(offer)}</div>
+        <OfferTerms offer={offer} />
+        <div className={styles.cardBottom}><span className={styles.location}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8c0 4-6 9-6 9S4 12 4 8a6 6 0 1 1 12 0Z" /><circle cx="10" cy="8" r="2" /></svg><span>{offer.regions.length ? offer.regions.join(" · ") : "Region not published"}{offer.zones.length > 0 && <small>{offer.zones.join(" · ")}</small>}</span></span><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpuEntry.shortName} on ${providerEntry.name} details`} aria-expanded={open} aria-controls={open ? `${id}-mobile-${offer.id}` : undefined} onClick={() => toggleDetails(offer.id)}>Details<Chevron open={open} /></button></div>
+        {open && <div className={styles.details} id={`${id}-mobile-${offer.id}`}><OfferDetails offer={offer} /></div>}
+      </article>;
+    })}</div>
+    {filtered.length === 0 && <div className={styles.empty}><span aria-hidden="true">⌕</span><h3>{matchedOffers.length > 0 ? `${matchedOffers.length} matching offers are offline` : "No matching offers"}</h3><p>{matchedOffers.length > 0 ? "These published prices are unavailable. Include them to compare without changing your filters." : "Try another model or region, or include every sourced record."}</p><button type="button" onClick={matchedOffers.length > 0 ? () => { setAvailableOnly(false); setPage(1); } : showAll}>{matchedOffers.length > 0 ? "Include offline offers" : "Show all offers"}</button></div>}
+    <footer className={styles.tableFooter}><span>{filtered.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filtered.length)} of ${filtered.length} offers` : "0 offers"}</span>{filtered.length > pageSize && <nav className={styles.pagination} aria-label="Price results pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page">←</button><span>{currentPage} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={currentPage * pageSize >= filtered.length} onClick={() => setPage(currentPage + 1)} aria-label="Next page">→</button></nav>}<a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report an issue ↗</a></footer>
+    <aside className={styles.partner}><div><span>FLATKEY COMPUTE · COMMERCIAL PARTNER</span><p>Need a configuration matched to your workload?</p></div><a href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a quote <span>↗</span></a></aside>
+  </section>;
 }
