@@ -39,13 +39,16 @@ export function configurationLabel(offer: Offer) {
 }
 // USD-normalized comparisons never mix billing periods, offline/reference listings,
 // starting prices, component-only charges, member rates or purchasing models.
+export function hasEligibilityConditions(offer: Offer) {
+  return offer.membershipRequired === true || offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
+}
 export function isComparableUsdHourly(offer: Offer): offer is Offer & { pricePerGpuHour: number } {
   return offer.billingUnit === "GPU-hour"
     && (offer.sourceCurrency === "USD" || Boolean(offer.fx?.rateToUsd && offer.fx?.rateDate))
     && offer.dataStatus === "official-page" && offer.availability !== "unavailable"
     && offer.rentalType === "On-demand" && offer.quoteStatus === "quoted"
     && ["instance_total_allocated", "advertised_per_gpu"].includes(offer.priceBasis)
-    && !offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition))
+    && !hasEligibilityConditions(offer)
     && typeof offer.pricePerGpuHour === "number" && Number.isFinite(offer.pricePerGpuHour) && offer.pricePerGpuHour >= 0;
 }
 export function cheapestComparableOffer(input: Offer[]) {
