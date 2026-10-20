@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { collectionIsDue } from "./daily-refresh.mjs";
+import { collectionIsDue, shouldCollectPrices } from "./daily-refresh.mjs";
 import { REQUIRED_PROVIDERS } from "./lib/library.mjs";
 
 function snapshot(collectedAt) {
@@ -19,4 +19,15 @@ test("failed, future or incomplete snapshots never suppress a fresh collection",
   const incomplete=snapshot("2026-10-20T02:40:00Z");incomplete.provider_results.pop();
   assert.equal(collectionIsDue(incomplete,now),true);
   assert.equal(collectionIsDue(snapshot("2026-10-20T03:00:00Z"),now),true);
+});
+
+test("force refresh only bypasses daily deduplication for explicit manual runs", () => {
+  const options = { now: new Date("2026-10-20T02:45:00Z"), ref: "refs/heads/main" };
+  const complete = snapshot("2026-10-20T02:40:00Z");
+  assert.equal(shouldCollectPrices(complete, { ...options, eventName: "workflow_dispatch", forceRefresh: true }), true);
+  assert.equal(shouldCollectPrices(complete, { ...options, eventName: "workflow_dispatch", forceRefresh: "true" }), true);
+  assert.equal(shouldCollectPrices(complete, { ...options, eventName: "workflow_dispatch", forceRefresh: "false" }), false);
+  assert.equal(shouldCollectPrices(complete, { ...options, eventName: "schedule", forceRefresh: true }), false);
+  assert.equal(shouldCollectPrices(complete, { ...options, eventName: "push", forceRefresh: true }), false);
+  assert.equal(shouldCollectPrices(complete, { ...options, ref: "refs/heads/codex/test", eventName: "workflow_dispatch" }), true);
 });

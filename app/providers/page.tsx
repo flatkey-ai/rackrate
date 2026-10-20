@@ -1,9 +1,11 @@
+export const dynamic = "force-dynamic";
+
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getGpu, getOffersForProvider, providers } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
-
 
 export const metadata: Metadata = {
   title: "GPU cloud providers compared",
@@ -17,7 +19,10 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ProvidersIndexPage() {
+export default async function ProvidersIndexPage() {
+  const snapshot = await getPricingSnapshot();
+  const { getGpu, getOffersForProvider, providers } = snapshot;
+
   return (
     <main className="directory-page">
       <section className="directory-hero shell">
@@ -82,6 +87,7 @@ export default function ProvidersIndexPage() {
           <a className="button button-primary" href={flatkeyWebsiteUrl("provider_directory_quote")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
         </div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

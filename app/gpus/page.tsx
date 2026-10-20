@@ -1,9 +1,12 @@
+export const dynamic = "force-dynamic";
+
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getCheapestOffer, getOffersForGpu, gpus, gpuMemoryLabel, providers } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
+import { gpuMemoryLabel } from "@/lib/data";
 import { formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
-
 
 export const metadata: Metadata = {
   title: "GPU rental prices by model: H100, H200, A100 & more",
@@ -35,7 +38,10 @@ const faqs = [
   },
 ];
 
-export default function GpusIndexPage() {
+export default async function GpusIndexPage() {
+  const snapshot = await getPricingSnapshot();
+  const { getCheapestOffer, getOffersForGpu, gpus, providers } = snapshot;
+
   const marketFloor = getCheapestOffer();
 
   const faqSchema = {
@@ -125,6 +131,7 @@ export default function GpusIndexPage() {
           <a className="button button-primary" href={flatkeyWebsiteUrl("gpu_directory_quote")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a>
         </div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

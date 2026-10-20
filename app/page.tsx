@@ -1,11 +1,18 @@
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { PriceExplorer } from "@/components/price-explorer";
-import { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, gpuMemoryLabel, isRegionIndexable, offers, providers, regions } from "@/lib/data";
+import { getPricingSnapshot } from "@/lib/pricing-snapshot";
+import { SnapshotFooter } from "@/components/snapshot-footer";
+import { gpuMemoryLabel } from "@/lib/data";
 import { cheapestComparableOffer, formatFxRate, formatInstancePrice, formatOriginalPrice, formatBenchmarkPrice } from "@/lib/pricing";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 
+export default async function Home() {
+  const snapshot = await getPricingSnapshot();
+  const { getCheapestOffer, getOffersForGpu, getOffersForProvider, getOffersForRegion, gpus, isRegionIndexable, offers, providers, regions } = snapshot;
+  const explorerData = { offers: snapshot.offers, gpus: snapshot.gpus, providers: snapshot.providers, generatedAt: snapshot.generatedAt, sources: snapshot.sources };
 
-export default function Home() {
   const h100 = getCheapestOffer("nvidia-h100");
   const a100 = getCheapestOffer("nvidia-a100");
   const l40s = getCheapestOffer("nvidia-l40s");
@@ -53,7 +60,7 @@ export default function Home() {
       </section>
 
       <section className="prices-section shell" id="prices">
-        <PriceExplorer />
+        <PriceExplorer {...explorerData} />
       </section>
 
       <section className="catalogue-section shell" id="gpus">
@@ -144,6 +151,7 @@ export default function Home() {
           <article><span>03</span><h3>Status-labeled</h3><p>Observation dates and source labels stay visible. A published price does not guarantee current inventory.</p></article>
         </div>
       </section>
+      <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />
     </main>
   );
 }

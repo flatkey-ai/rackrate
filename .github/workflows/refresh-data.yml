@@ -5,6 +5,12 @@ on:
     # GitHub uses UTC: 02:30 UTC is 10:30 Asia/Shanghai, every day.
     - cron: "30 2 * * *"
   workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: Collect again even if today's verified snapshot already exists
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -25,6 +31,8 @@ jobs:
           node-version: "22"
       - name: Avoid a duplicate successful daily collection
         id: due
+        env:
+          GPU_PRICE_FORCE_REFRESH: ${{ github.event_name == 'workflow_dispatch' && inputs.force_refresh || false }}
         run: node scripts/daily-refresh.mjs
       - uses: actions/setup-python@v5
         if: steps.due.outputs.collect == 'true'
@@ -51,6 +59,7 @@ jobs:
       - run: bun run typecheck
         if: steps.due.outputs.collect == 'true'
       - run: bun run build
+        id: validation_build
         if: steps.due.outputs.collect == 'true'
       - name: Commit verified dataset
         if: github.ref == 'refs/heads/main' && steps.due.outputs.collect == 'true'
@@ -64,8 +73,11 @@ jobs:
           git add data/offers.json data/price-history.json data/public-prices.json data/fx-rates.json
           git commit -m "data: refresh official GPU prices [skip ci]"
           git push
+      - name: Warm and verify the cloud-published snapshot
+        if: github.ref == 'refs/heads/main'
+        run: node scripts/verify-deployment.mjs
       - name: Preserve the verified collection result
-        if: steps.due.outputs.collect == 'true'
+        if: always() && steps.due.outputs.collect == 'true' && steps.validation_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: public-gpu-prices-${{ github.run_id }}

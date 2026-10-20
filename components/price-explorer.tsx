@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { gpus, offers, offerDatasetGeneratedAt, offerDatasetSources, providers, gpuMemoryLabel } from "@/lib/data";
+import { gpuMemoryLabel, type Gpu, type Offer, type PricingDataset, type Provider } from "@/lib/data";
 import { availabilityLabel, billingUnitLabel, compareOffers, configurationLabel, formatFxRate, formatInstancePrice, formatOfferPrice, formatOriginalInstancePrice, formatOriginalPrice, priceBasisLabel } from "@/lib/pricing";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 import { trackSiteEvent } from "@/components/site-analytics";
@@ -10,12 +10,20 @@ import { FilterSelect } from "@/components/filter-select";
 import { FlatkeyRecommendation } from "@/components/flatkey-recommendation";
 
 const observedDate = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
-const freshness = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(offerDatasetGeneratedAt));
-const automatedSourceCount = offerDatasetSources.filter((source) => source.status === "ok").length;
 const unique = (items: string[]) => [...new Set(items)].sort();
 
-export function PriceExplorer({ gpuSlug, providerSlug, regionNames }: { gpuSlug?: string; providerSlug?: string; regionNames?: string[] } = {}) {
-  const scopedOffers = useMemo(() => offers.filter((offer) => (!gpuSlug || offer.gpuSlug === gpuSlug) && (!providerSlug || offer.providerSlug === providerSlug) && (!regionNames || offer.regions.some((entry) => regionNames.includes(entry)))), [gpuSlug, providerSlug, regionNames]);
+export type PriceExplorerData = {
+  offers: Offer[];
+  gpus: Gpu[];
+  providers: Provider[];
+  generatedAt: string;
+  sources: PricingDataset["sources"];
+};
+
+export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, gpuSlug, providerSlug, regionNames }: PriceExplorerData & { gpuSlug?: string; providerSlug?: string; regionNames?: string[] }) {
+  const freshness = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date(generatedAt));
+  const automatedSourceCount = sources.filter((source) => source.status === "ok").length;
+  const scopedOffers = useMemo(() => offers.filter((offer) => (!gpuSlug || offer.gpuSlug === gpuSlug) && (!providerSlug || offer.providerSlug === providerSlug) && (!regionNames || offer.regions.some((entry) => regionNames.includes(entry)))), [offers, gpuSlug, providerSlug, regionNames]);
   const isScoped = Boolean(gpuSlug || providerSlug || regionNames);
   const [query, setQuery] = useState("");
   const [gpu, setGpu] = useState("all");
@@ -45,9 +53,10 @@ export function PriceExplorer({ gpuSlug, providerSlug, regionNames }: { gpuSlug?
         && (basis === "all" || offer.priceBasis === basis) && (!availableOnly || offer.availability !== "unavailable")
         && (!hideConditional || !offer.conditions.some((condition) => /member|会员|new.customer|新客|commitment|reserved/i.test(condition)));
     }).sort(compareOffers);
-  }, [scopedOffers, query, gpu, provider, rental, currency, unit, region, zone, basis, availableOnly, hideConditional]);
+  }, [scopedOffers, gpus, providers, query, gpu, provider, rental, currency, unit, region, zone, basis, availableOnly, hideConditional]);
   const pageSize = 50;
-  const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
+  const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const change = (filter: string, setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); trackSiteEvent("price_filter_changed", { filter, value }); };
   const resetFilters = () => { setQuery(""); setGpu("all"); setProvider("all"); setRental(isScoped ? "all" : "On-demand"); setCurrency("all"); setUnit(isScoped ? "all" : "GPU-hour"); setRegion("all"); setZone("all"); setBasis("all"); setAvailableOnly(!isScoped); setHideConditional(false); setPage(1); };
   const showAll = () => { resetFilters(); setRental("all"); setCurrency("all"); setUnit("all"); setAvailableOnly(false); };
@@ -74,7 +83,7 @@ export function PriceExplorer({ gpuSlug, providerSlug, regionNames }: { gpuSlug?
       const providerEntry = providers.find((entry) => entry.slug === offer.providerSlug)!;
       return <tr key={offer.id}><td><Link className="gpu-link" href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><Link className="provider-link" href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link><span className="offer-evidence"><a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "official-page" ? "Official public source" : "Dated reference"} ↗</a><time dateTime={offer.observedAt}>{observedDate.format(new Date(offer.observedAt))}</time></span></td><td><strong>{offer.rawGpuModel ?? offer.gpuModel ?? gpuEntry.shortName}</strong><small className="cell-detail">{configurationLabel(offer)}</small>{offer.rawSku && <small className="cell-detail">SKU: {offer.rawSku}</small>}{offer.resources && Object.keys(offer.resources).length > 0 && <details className="offer-conditions"><summary>Published configuration</summary><ul>{Object.entries(offer.resources).map(([key, value]) => <li key={key}>{key.replaceAll("_", " ")}: {typeof value === "object" ? JSON.stringify(value) : String(value)}</li>)}</ul></details>}</td><td>{offer.countryCode && <span className="country-code">{offer.countryCode}</span>}{offer.regions.length ? offer.regions.join(" · ") : "Not published"}<small className="cell-detail">{offer.zones.length ? `Zone: ${offer.zones.join(" · ")}` : "Zone not published"}</small><small className="cell-detail">Scope: {offer.regionScope ?? offer.geographicScope ?? "Not published"}</small></td><td>{offer.rentalType}{offer.cloudTier && <small className="cell-detail">Cloud tier: {offer.cloudTier}</small>}{offer.pricingTier && <small className="cell-detail">Price tier: {offer.pricingTier}</small>}{offer.conditions.some((condition) => /member|会员/i.test(condition)) && <small className="cell-detail">Member / eligibility conditions apply</small>}<small className="cell-detail">{priceBasisLabel(offer)}</small>{offer.conditions.length > 0 && <details className="offer-conditions"><summary>{offer.conditions.length} source conditions</summary><ul>{offer.conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul></details>}</td><td><span className={`status ${offer.dataStatus === "seed" ? "unknown" : offer.availability}`}><i />{offer.dataStatus === "seed" ? "Reference / not live" : availabilityLabel[offer.availability]}</span><small className="cell-detail">{offer.dataStatus === "seed" ? "Historical observation; current stock not checked" : offer.quoteStatus === "starting_at" ? "Starting price" : offer.quoteStatus === "contact_sales" ? "Sales quote required" : "Published quote"}</small></td><td className="numeric price-cell"><strong>{formatOfferPrice(offer)}</strong><small>/ {billingUnitLabel(offer)} · {offer.sourceCurrency === "USD" ? "native USD" : "converted to USD"}</small><small>{formatOriginalPrice(offer)}</small><small>{offer.fx && offer.sourceCurrency !== "USD" ? <a href={offer.fx.sourceUrl} target="_blank" rel="nofollow noreferrer">{formatFxRate(offer)} · {offer.fx.sourceName} ↗</a> : formatFxRate(offer)}</small><small>{formatInstancePrice(offer)}</small>{offer.instancePrice != null && offer.sourceCurrency !== "USD" && <small>{formatOriginalInstancePrice(offer)}</small>}{offer.sourceAmount && <details className="offer-conditions"><summary>Exact source / conversion</summary><small>Source: {offer.sourceAmount} {offer.sourceCurrency} / {billingUnitLabel(offer)}</small>{offer.usdSourceAmount && <small>USD decimal: {offer.usdSourceAmount}</small>}{offer.fx?.rateToUsdDecimal && <small>Exact FX: {offer.fx.rateToUsdDecimal}</small>}{offer.fx?.formula && <small>{offer.fx.formula}</small>}{offer.fx?.rounding && <small>Rounding: {offer.fx.rounding}</small>}</details>}</td></tr>;
     })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><strong>No records match these filters.</strong><span>Use “Show every sourced record” to include all currencies, monthly packages and offline prices.</span></div>}</div>
-    {filtered.length > pageSize && <div className="price-pagination"><button disabled={page === 1} onClick={() => setPage(page - 1)}>← Previous</button><span>Page {page} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={page * pageSize >= filtered.length} onClick={() => setPage(page + 1)}>Next →</button></div>}
+    {filtered.length > pageSize && <div className="price-pagination"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>← Previous</button><span>Page {currentPage} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={currentPage * pageSize >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next →</button></div>}
     <div className="table-footnote"><span>{automatedSourceCount} successful public sources · USD via dated ECB reference rates · Original periods and source timestamps preserved.</span><div><Link href="/methodology">How comparison works →</Link><a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report a data issue ↗</a></div></div>
     <div className="explorer-conversion"><div><strong>Have a configuration in mind?</strong><span>Take the GPU, region and duration to Flatkey for a formal quote.</span></div><a className="button button-primary" href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a Flatkey quote <span>↗</span></a></div>
   </div>;

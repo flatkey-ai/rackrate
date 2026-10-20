@@ -1,33 +1,48 @@
 # Daily GPU price refresh
 
-The collection runs once each day at **10:30 Asia/Shanghai**, implemented as 02:30 UTC in `.github/workflows/refresh-data.yml`. GitHub can queue a scheduled run, so 10:30 is the scheduled start rather than a guaranteed completion time.
+Collection is scheduled once each day at **10:30 Asia/Shanghai**, implemented as `30 2 * * *` (02:30 UTC) in `.github/workflows/refresh-data.yml`. GitHub may queue a scheduled job; 10:30 is its scheduled start, not a guaranteed completion time.
 
-## Execution
+## Cloud execution and publication
 
-1. Install the immutable collection-library revision in `requirements-collector.txt`, including its public browser dependency.
-2. Run all eleven anonymous library sources and the existing public Hyperstack collector. No provider API keys, login state, recharge or instance provisioning is used.
-3. Read the latest published ECB reference rates anonymously. Validate native amount, currency, billing period, source identity, geography and FX date; convert to USD while preserving the original prices and periods. Save the raw response, FX snapshot, adapted offers and history.
-4. Run tests, typechecking and a production build. Any failure stops publication and retains the last verified files on main.
-5. Commit the four data files on main. Codex verifies and publishes this main-branch snapshot to the existing Railway production service at 10:45, then checks live timestamps, FX dates, source counts and offline/contact-sales counts against the committed dataset.
+1. Check the verified main-branch snapshot. If all eleven required sources already completed after today's 10:30 China-time cutoff, skip another collection.
+2. When collection is due, install the immutable library revision in `requirements-collector.txt` and its browser dependency. Run all eleven anonymous library sources plus the public Hyperstack collector. No cloud-provider keys, login state, recharge or GPU provisioning is used.
+3. Read the latest published ECB reference rates anonymously. Validate prices, currencies, billing periods, source identity, geography and FX date. Preserve original amounts and convert only currency; monthly rates stay per month. Save the raw library response, FX snapshot, adapted offers and history.
+4. Run tests, typechecking and a production build before committing the four data files to main. Collection or validation failure leaves the last verified main-branch data intact.
+5. The website reads the single self-contained public `main/data/offers.json` file at request time. Source metadata, GPU/provider catalogs and FX belong to that same snapshot; the website does not combine independently fetched main-branch files.
+6. GitHub Actions calls the public status endpoint to warm the server's snapshot, then checks its publication state, exact file SHA-256, timestamps, FX date, source counts and offline/contact-sales counts. It also fetches the homepage and checks its `rackrate-pricing-snapshot` meta marker against that same SHA-256. A run is successful only when both API and page match. This step runs even when duplicate collection was skipped.
 
-The existing Railway GitHub connection still references the legacy repository. The current account can deploy, but Railway rejects changing the source or creating a production-scoped project token. No deployment token was created or stored in GitHub, and a personal account-wide token is not used. Until a Railway workspace administrator grants the appropriate connection or project-token access, daily publication uses the existing authenticated CLI through Codex.
+Daily data publication uses no Railway deployment token, existing CLI session or desktop process. The website must first have the runtime snapshot reader deployed; subsequent pricing refreshes do not deploy the application. Changes to application code still require a normal deployment. 11agents is not part of this pipeline.
 
-Branch-dispatched workflow runs collect and validate but do not push data to main. This permits a real anonymous collection test before a code change is merged.
+## Propagation, cache and failure behavior
 
-## Codex supervision
+The server uses a 60-second update cache, merges simultaneous refreshes and validates a complete candidate before replacing its active snapshot. GitHub raw content may be cached by its CDN for several minutes. A data commit is therefore not an immediate website-update guarantee; the verifier retries for up to six minutes and fails if the expected bytes are not visible.
 
-A daily Codex check at **10:45 Asia/Shanghai** verifies the workflow result, raw collection date, source statuses and live RackRate data. It does not start a second collection after a successful run. If today's job is missing or failed and no refresh is running, it can dispatch the same workflow once and verify the outcome. A pending deployment is followed without issuing another collection.
+An unavailable, incomplete, malformed or older upstream snapshot cannot replace newer verified data. The server serves its last verified snapshot, or the bundled snapshot after a cold start, with publication metadata that indicates fallback/staleness. The public status endpoint reports `publication.mode`, `status`, `sha256`, `sourceUrl`, `checkedAt`, `lastError` and `stale`. The verifier requires `mode=github-public-snapshot`, `status=current`, `stale=false` and the expected hash, so a fallback does not silently pass publication checks.
 
-The workflow checks the verified main-branch snapshot before installing or fetching anything. If all eleven required sources already completed after today's 10:30 China-time cutoff, a later scheduled or manual run skips collection. The shared concurrency group serializes these checks. Branch validation runs always collect, so a developer can still verify the runner before merging.
+The public verifier only performs GET requests. It cannot choose the server's upstream URL, activate another commit or change credentials. A verification failure after a successful data commit leaves that validated data on main; a later normal manual run can retry publication checks without collecting again. Verified collection artifacts remain available for diagnosis.
 
-The main collection runs on GitHub even when the desktop is off. Daily website publication and the local Codex follow-up require the computer, app and existing Railway login to remain available. 11agents is not involved in this pipeline.
+## Manual operation and Codex supervision
 
-For publication, use a fresh clean checkout or archive of current `origin/main`, run tests, typechecking and a production build, then deploy only to project `830de4a8-1acc-4ad1-aa14-3754afc48db5`, environment `bfed2a9a-fa4b-4f5a-b025-80f540e80dee`, service `f72ffbf8-baf1-49c6-b0a5-31d2fb77b0c0`. Do not upload local `.env` files, create services or replace credentials. Confirm the deployment is healthy and run `node scripts/verify-deployment.mjs`; an upload or build success alone does not establish that the public website updated.
+Use GitHub Actions **Refresh public GPU pricing data** to run or inspect the workflow. `force_refresh` defaults to false. Only an explicit manual `workflow_dispatch` with `force_refresh=true` bypasses today's successful collection; scheduled events ignore force. Branch-dispatched runs always collect and validate, but do not commit to main or query production publication.
 
-## Operator checks
+The optional daily Codex check at **10:45 Asia/Shanghai** verifies the cloud workflow, source statuses and live snapshot. It can dispatch the same workflow once if today's run is missing or failed and no refresh is running. It follows an active workflow instead of starting a duplicate. A normal retry keeps `force_refresh=false`; a completed collection can then reuse the main snapshot and repeat only cloud verification. This extra supervision requires Codex to be available, but daily collection and publication run entirely in the cloud without it.
 
-Use GitHub Actions **Refresh public GPU pricing data** for execution history and its downloadable public result. Confirm all eleven library provider results succeeded and inspect `coverage` for model gaps; family coverage is not a completeness or live-stock guarantee.
+To verify production against the `data/offers.json` bytes in a clean main checkout:
 
-On RackRate, verify the USD main price, original amount/currency, FX source/date/rate, hourly versus monthly periods, unknown geography, offline UCloud promotions and contact-sales records. Keep ordinary/member rates, Spot/on-demand, cloud tiers, VRAM variants and GPU-component versus complete-instance costs distinct. Never treat a failed source or absent row as a zero price.
+```bash
+node scripts/verify-deployment.mjs
+```
 
-The public library remains usable independently through Python and JSON CLI. It does not contain RackRate-specific storage, scheduling, upload endpoints or credentials.
+For a local test server only:
+
+```bash
+node scripts/verify-deployment.mjs --base-url http://localhost:3000
+```
+
+The test origin changes only where the verifier sends its public GETs. It does not change the website's fixed GitHub source. No upload or deployment command runs during verification.
+
+## Data checks
+
+Confirm all eleven library provider results succeeded and inspect `coverage` for model gaps; model-family coverage is not a completeness or stock guarantee. Check the USD main price, exact original amount/currency, dated FX source/rate, hourly versus monthly periods, unpublished geography, offline UCloud promotions and contact-sales rows. Ordinary/member rates, Spot/on-demand, cloud tiers, hardware variants and GPU-component versus complete-instance costs retain their conditions. Missing or failed data is never a zero price.
+
+The reusable library remains independently usable through Python and JSON CLI. It contains no RackRate storage, scheduling, publication endpoints or credentials.

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { FxDisclosure } from "@/components/fx-disclosure";
 import { SiteAnalytics } from "@/components/site-analytics";
 import { absoluteUrl, siteConfig } from "@/lib/site";
 import "./globals.css";
@@ -67,7 +66,6 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
           </div>
         </header>
         {children}
-        <FxDisclosure />
         <footer className="site-footer">
           <div className="shell footer-grid">
             <div>
