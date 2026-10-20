@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { gpuMemoryLabel, type Gpu, type Offer, type PricingDataset, type Provider } from "@/lib/data";
-import { availabilityLabel, billingUnitLabel, compareOffers, formatAmount, formatOfferPrice, priceBasisLabel, hasEligibilityConditions as conditional } from "@/lib/pricing";
+import { compareOffers, priceBasisLabel } from "@/lib/pricing";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 import { trackSiteEvent } from "@/components/site-analytics";
 import { FilterSelect } from "@/components/filter-select";
-import { OfferDetails } from "@/components/offer-details";
+import { GpuComparisonGroup } from "@/components/gpu-comparison-group";
+import { groupOffersForComparison, offerAudience } from "@/lib/offer-comparison";
 import styles from "./price-explorer.module.css";
 
 const unique = (items: string[]) => [...new Set(items)].sort();
@@ -19,26 +20,6 @@ export type PriceExplorerData = {
 
 function Chevron({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" data-open={open}><path d="m6 8 4 4 4-4" /></svg>;
-}
-
-function OfferPrice({ offer }: { offer: Offer }) {
-  return <div className={styles.price}>
-    <strong>{formatOfferPrice(offer)}</strong>
-    <span>per {billingUnitLabel(offer)}</span>
-    {offer.sourceCurrency !== "USD" && offer.pricePerGpuUnit !== null && <small>{formatAmount(offer.pricePerGpuUnit, offer.sourceCurrency)} original · FX {offer.fx?.rateDate ?? "unavailable"}</small>}
-  </div>;
-}
-
-function OfferTerms({ offer }: { offer: Offer }) {
-  return <div className={styles.terms}>
-    <span className={styles.plan}>{offer.rentalType}{offer.cloudTier ? ` · ${offer.cloudTier}` : ""}</span>
-    <div className={styles.badges}>
-      <span className={`${styles.status} ${offer.availability === "unavailable" ? styles.offline : ""}`} data-availability={offer.dataStatus === "seed" ? "unknown" : offer.availability}><i />{offer.dataStatus === "seed" ? "Historical reference" : availabilityLabel[offer.availability]}</span>
-      {conditional(offer) && <span className={styles.conditional}>{/member|会员/i.test(offer.conditions.join(" ")) ? "Member rate" : "Conditions apply"}</span>}
-      {offer.priceBasis === "gpu_component" && <span className={styles.conditional}>GPU component</span>}
-      {offer.quoteStatus === "starting_at" && <span className={styles.conditional}>Starting price</span>}
-    </div>
-  </div>;
 }
 
 export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, gpuSlug, providerSlug, regionNames }: PriceExplorerData & { gpuSlug?: string; providerSlug?: string; regionNames?: string[] }) {
@@ -60,7 +41,6 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
   const [hideConditional, setHideConditional] = useState(false);
   const [page, setPage] = useState(1);
   const [advanced, setAdvanced] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const regionOptions = useMemo(() => unique(scopedOffers.flatMap((offer) => offer.regions)), [scopedOffers]);
   const zoneOptions = useMemo(() => unique(scopedOffers.flatMap((offer) => offer.zones)), [scopedOffers]);
   const currencies = useMemo(() => unique(scopedOffers.map((offer) => offer.sourceCurrency)), [scopedOffers]);
@@ -75,13 +55,18 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
         && (currency === "all" || offer.sourceCurrency === currency) && (unit === "all" || offer.billingUnit === unit)
         && (region === "all" || (region === "__unpublished" ? offer.regions.length === 0 : offer.regions.includes(region))) && (zone === "all" || (zone === "__unpublished" ? offer.zones.length === 0 : offer.zones.includes(zone)))
         && (basis === "all" || offer.priceBasis === basis)
-        && (!hideConditional || !conditional(offer));
+        && (!hideConditional || offerAudience(offer) === "regular");
     }).sort(compareOffers);
   }, [scopedOffers, gpuMap, providerMap, query, gpu, provider, rental, currency, unit, region, zone, basis, hideConditional]);
   const filtered = useMemo(() => matchedOffers.filter((offer) => !availableOnly || offer.availability !== "unavailable"), [matchedOffers, availableOnly]);
-  const pageSize = 25;
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
-  const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const groups = useMemo(() => {
+    const order = new Map(gpus.map((entry, index) => [entry.slug, index]));
+    return groupOffersForComparison(filtered).sort((a, b) => (order.get(a.gpuSlug) ?? Infinity) - (order.get(b.gpuSlug) ?? Infinity) || a.gpuSlug.localeCompare(b.gpuSlug));
+  }, [filtered, gpus]);
+  const pageSize = 4;
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(groups.length / pageSize)));
+  const visibleGroups = groups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleOfferCount = visibleGroups.reduce((total, group) => total + group.offers.length, 0);
   const change = (filter: string, setter: (value: string) => void) => (value: string) => { setter(value); setPage(1); trackSiteEvent("price_filter_changed", { filter, value }); };
   const resetFilters = () => { setQuery(""); setGpu("all"); setProvider("all"); setRental(isScoped ? "all" : "On-demand"); setCurrency("all"); setUnit(isScoped ? "all" : "GPU-hour"); setRegion("all"); setZone("all"); setBasis("all"); setAvailableOnly(!isScoped); setHideConditional(false); setPage(1); };
   const changePeriod = (value: string) => {
@@ -97,12 +82,10 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
     ...(basis !== "all" ? [{ label: priceBasisLabel({ priceBasis: basis } as Offer), clear: () => change("basis", setBasis)("all") }] : []),
     ...(hideConditional ? [{ label: "No eligibility rates", clear: () => { setHideConditional(false); setPage(1); } }] : []),
   ];
-  const configuration = (offer: Offer) => [offer.vramGb !== null ? `${offer.vramGb} GB` : null, offer.gpuVariant, offer.gpuCount !== null ? `${offer.gpuCount}× GPU` : null].filter(Boolean).join(" · ") || "See configuration details";
-  const toggleDetails = (offerId: string) => setExpanded(expanded === offerId ? null : offerId);
 
   return <section className={styles.explorer} aria-label="GPU price comparison">
     <header className={styles.header}>
-      <div><span className={styles.eyebrow}>THE PRICE BOARD</span><h2>Compare GPU prices.</h2><p>Find your GPU. Compare the price and the terms.</p></div>
+      <div><span className={styles.eyebrow}>THE PRICE BOARD</span><h2>Compare GPU prices.</h2><p>One GPU, every platform. Compare regular and member rates.</p></div>
       <div className={styles.updated}><span>{automatedSourceCount} public sources <i /> Daily refresh</span><time dateTime={generatedAt}>Collected {freshness}</time><small>China time · UTC+8</small></div>
     </header>
     <div className={styles.filters}>
@@ -128,38 +111,14 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
       {activeChips.length > 0 && <div className={styles.chips} aria-label="Active filters">{activeChips.map((chip) => <button key={chip.label} type="button" onClick={chip.clear} aria-label={`Remove ${chip.label} filter`}>{chip.label}<span aria-hidden="true">×</span></button>)}</div>}
     </div>
     <div className={styles.results}>
-      <p aria-live="polite"><strong>{filtered.length.toLocaleString("en-US")}</strong> offers <span>of {scopedOffers.length.toLocaleString("en-US")} sourced</span></p>
+      <p aria-live="polite"><strong>{filtered.length.toLocaleString("en-US")}</strong> offers <span>across {groups.length} GPU models · {scopedOffers.length.toLocaleString("en-US")} sourced</span></p>
       <div className={styles.resultActions}><label className={styles.check}><input type="checkbox" checked={availableOnly} onChange={(event) => { setAvailableOnly(event.target.checked); setPage(1); }} />Hide offline</label><button type="button" onClick={resetFilters}>Reset</button><button type="button" onClick={showAll}>Show all</button></div>
     </div>
-    <div className={styles.usdNote}><span><strong>USD</strong> per GPU · <span>≈ converted price, original currency preserved</span></span><details><summary>About these prices <Chevron /></summary><p>Daily ECB reference rates include their publication date and source in each offer’s details. Monthly prices stay monthly. Results are sorted by USD price within billing period, purchase model and price basis. A listed price does not confirm inventory; member rates, offline offers and historical references are labeled. <Link href="/methodology">Read the methodology ↗</Link></p></details></div>
-    <div className={styles.desktopResults}>
-      <table className={styles.table}><caption className="sr-only">GPU prices with their configuration, region, terms, USD amount and original currency</caption><thead><tr><th scope="col">GPU / Platform</th><th scope="col">Region / Zone</th><th scope="col">Plan / Availability</th><th scope="col" className={styles.priceHeading}>Price in USD</th><th scope="col"><span className="sr-only">Offer details</span></th></tr></thead><tbody>{visible.map((offer) => {
-        const gpuEntry = gpuMap.get(offer.gpuSlug)!;
-        const providerEntry = providerMap.get(offer.providerSlug)!;
-        const open = expanded === offer.id;
-        return <Fragment key={offer.id}><tr className={open ? styles.selectedRow : undefined}>
-          <td><Link className={styles.gpuName} href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><div className={styles.modelMeta}><Link href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link><span>·</span><span>{configuration(offer)}</span></div></td>
-          <td><span className={styles.location}>{offer.regions.length ? offer.regions.join(" · ") : "Not published"}</span>{offer.zones.length > 0 && <small className={styles.zone}>{offer.zones.join(" · ")}</small>}</td>
-          <td><OfferTerms offer={offer} /></td>
-          <td><OfferPrice offer={offer} /></td>
-          <td><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpuEntry.shortName} on ${providerEntry.name} details`} aria-expanded={open} aria-controls={open ? `${id}-desktop-${offer.id}` : undefined} onClick={() => toggleDetails(offer.id)}>Details<Chevron open={open} /></button></td>
-        </tr>{open && <tr className={styles.expandedRow} id={`${id}-desktop-${offer.id}`}><td colSpan={5}><div className={styles.details}><OfferDetails offer={offer} /></div></td></tr>}</Fragment>;
-      })}</tbody></table>
-    </div>
-    <div className={styles.mobileResults} aria-label="GPU price offers">{visible.map((offer) => {
-      const gpuEntry = gpuMap.get(offer.gpuSlug)!;
-      const providerEntry = providerMap.get(offer.providerSlug)!;
-      const open = expanded === offer.id;
-      return <article key={offer.id} className={styles.offerCard}>
-        <div className={styles.cardTop}><div><Link className={styles.gpuName} href={`/gpus/${gpuEntry.slug}`}>{gpuEntry.shortName}</Link><Link className={styles.provider} href={`/providers/${providerEntry.slug}`}>{providerEntry.name}</Link></div><OfferPrice offer={offer} /></div>
-        <div className={styles.cardConfiguration}>{configuration(offer)}</div>
-        <OfferTerms offer={offer} />
-        <div className={styles.cardBottom}><span className={styles.location}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8c0 4-6 9-6 9S4 12 4 8a6 6 0 1 1 12 0Z" /><circle cx="10" cy="8" r="2" /></svg><span>{offer.regions.length ? offer.regions.join(" · ") : "Region not published"}{offer.zones.length > 0 && <small>{offer.zones.join(" · ")}</small>}</span></span><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpuEntry.shortName} on ${providerEntry.name} details`} aria-expanded={open} aria-controls={open ? `${id}-mobile-${offer.id}` : undefined} onClick={() => toggleDetails(offer.id)}>Details<Chevron open={open} /></button></div>
-        {open && <div className={styles.details} id={`${id}-mobile-${offer.id}`}><OfferDetails offer={offer} /></div>}
-      </article>;
-    })}</div>
+    <div className={styles.usdNote}><span><strong>USD</strong> per GPU · <span>≈ converted price, original currency preserved</span></span><details><summary>About these prices <Chevron /></summary><p>Each GPU has its own comparison group. USD prices run low to high within the same memory, variant, period and purchase model. Full node prices divided by GPU count can be compared with advertised per-GPU rates; GPU-only charges and starting prices stay separate. Lowest regular and member labels use currently published numeric prices within each configuration and your active filters; they may span regions. Other eligibility rates, offline offers and historical references do not qualify. A listed price does not confirm inventory. Original currency and dated ECB conversion details stay available. <Link href="/methodology">Read the methodology ↗</Link></p></details></div>
+    {groups.length > 0 && <div className={styles.comparisonLegend}><span><i className={styles.regularDot} />Regular rate</span><span><i className={styles.memberDot} />Member rate</span><p>Lowest per-GPU rates: same memory / variant, period & plan. Node bundles and regions may vary.</p></div>}
+    <div className={styles.groupedResults}>{visibleGroups.map((group) => <GpuComparisonGroup key={group.gpuSlug} group={group} gpu={gpuMap.get(group.gpuSlug)!} providers={providerMap} id={`${id}-${group.gpuSlug}`} />)}</div>
     {filtered.length === 0 && <div className={styles.empty}><span aria-hidden="true">⌕</span><h3>{matchedOffers.length > 0 ? `${matchedOffers.length} matching offers are offline` : "No matching offers"}</h3><p>{matchedOffers.length > 0 ? "These published prices are unavailable. Include them to compare without changing your filters." : "Try another model or region, or include every sourced record."}</p><button type="button" onClick={matchedOffers.length > 0 ? () => { setAvailableOnly(false); setPage(1); } : showAll}>{matchedOffers.length > 0 ? "Include offline offers" : "Show all offers"}</button></div>}
-    <footer className={styles.tableFooter}><span>{filtered.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filtered.length)} of ${filtered.length} offers` : "0 offers"}</span>{filtered.length > pageSize && <nav className={styles.pagination} aria-label="Price results pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page">←</button><span>{currentPage} / {Math.ceil(filtered.length / pageSize)}</span><button disabled={currentPage * pageSize >= filtered.length} onClick={() => setPage(currentPage + 1)} aria-label="Next page">→</button></nav>}<a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report an issue ↗</a></footer>
+    <footer className={styles.tableFooter}><span>{groups.length ? `Models ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, groups.length)} of ${groups.length} · ${visibleOfferCount} offers shown` : "0 offers"}</span>{groups.length > pageSize && <nav className={styles.pagination} aria-label="GPU model pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous models">←</button><span>{currentPage} / {Math.ceil(groups.length / pageSize)}</span><button disabled={currentPage * pageSize >= groups.length} onClick={() => setPage(currentPage + 1)} aria-label="Next models">→</button></nav>}<a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report an issue ↗</a></footer>
     <aside className={styles.partner}><div><span>FLATKEY COMPUTE · COMMERCIAL PARTNER</span><p>Need a configuration matched to your workload?</p></div><a href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a quote <span>↗</span></a></aside>
   </section>;
 }

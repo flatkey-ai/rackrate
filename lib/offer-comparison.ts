@@ -1,0 +1,133 @@
+import type { Offer } from "./data";
+
+export type OfferAudience = "regular" | "member" | "conditional";
+
+export type OfferComparisonBucket = {
+  key: string;
+  billingUnit: Offer["billingUnit"];
+  rentalType: Offer["rentalType"];
+  priceBasis: string;
+  vramGb: number | null;
+  gpuVariant: string | null;
+  offers: Offer[];
+  lowestRegularIds: string[];
+  lowestMemberIds: string[];
+};
+
+export type OfferComparisonGroup = {
+  gpuSlug: string;
+  buckets: OfferComparisonBucket[];
+  offers: Offer[];
+};
+
+const membershipPattern = /\bmember(?:ship)?\b|会员/i;
+const ordinaryMembershipPattern = /\bnon[- ]?members?\b|\bmembership (?:is )?not required\b|\bno membership (?:is )?required\b|无需会员|非会员/i;
+const eligibilityPattern = /\breserved\b|\bcommitment\b|\bprepaid\b|\bnew[\s-]+customers?\b|\bpromot(?:ion|ional)\b|\bpurchase limit\b|\bminimum[\s-]+(?:term|duration|quantity|spend)\b|prices apply to companies from Israel|仅新客户|新客|限购|仅限/i;
+
+export function isMemberPrice(offer: Offer): boolean {
+  return offer.membershipRequired === true || offer.conditions.some((condition) =>
+    membershipPattern.test(condition) && !ordinaryMembershipPattern.test(condition),
+  );
+}
+
+// Generic source caveats (stock/account/checkout not verified) are not special
+// eligibility. Only published purchase restrictions make an offer conditional.
+export function hasAdditionalEligibility(offer: Offer): boolean {
+  return offer.conditions.some((condition) => eligibilityPattern.test(condition)
+    && !/\bno (?:minimum )?commitment\b|\bwithout (?:a )?commitment\b/i.test(condition));
+}
+
+export function offerAudience(offer: Offer): OfferAudience {
+  if (isMemberPrice(offer)) return "member";
+  return hasAdditionalEligibility(offer) ? "conditional" : "regular";
+}
+
+function normalizedVariant(offer: Offer): string | null {
+  const value = offer.gpuVariant?.trim().replace(/\s+/g, " ");
+  if (!value) return null;
+  const compact = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const model = offer.gpuSlug.toLowerCase().replace(/^(?:nvidia|amd|gpu)-/, "").replace(/[^a-z0-9]/g, "");
+  // Some adapters repeat the model in the variant field (e.g. "4090"). That
+  // does not create a distinct board variant; 4090_48G, SXM and PCIe still do.
+  if (compact === model || compact === model.replace(/^rtx/, "") || compact === model.replace(/\d+gb$/, "")) return null;
+  return ({ pcie: "PCIe", sxm: "SXM", sxm2: "SXM2", sxm4: "SXM4", sxm5: "SXM5", sxm6: "SXM6", nvlink: "NVLink", nvl: "NVL", nvl72: "NVL72", hgx: "HGX" } as Record<string, string>)[compact] ?? value;
+}
+
+function normalizedBasis(offer: Offer): string {
+  return ["instance_total_allocated", "advertised_per_gpu"].includes(offer.priceBasis) ? "full_price" : offer.priceBasis;
+}
+
+export function comparisonBucketKey(offer: Offer): string {
+  return JSON.stringify([
+    offer.gpuSlug, offer.billingUnit, offer.rentalType, normalizedBasis(offer),
+    offer.vramGb, normalizedVariant(offer)?.toLowerCase() ?? null,
+  ]);
+}
+
+function sortableUsd(offer: Offer): number {
+  return typeof offer.priceUsdPerGpuUnit === "number" && Number.isFinite(offer.priceUsdPerGpuUnit) && offer.priceUsdPerGpuUnit >= 0
+    ? offer.priceUsdPerGpuUnit : Infinity;
+}
+
+export function isLowestPriceCandidate(offer: Offer): boolean {
+  const hasUsd = Number.isFinite(sortableUsd(offer));
+  const hasOriginal = typeof offer.pricePerGpuUnit === "number" && Number.isFinite(offer.pricePerGpuUnit) && offer.pricePerGpuUnit >= 0;
+  const fx = offer.fx;
+  const hasFx = offer.sourceCurrency === "USD" || Boolean(fx
+    && Number.isFinite(fx.rateToUsd) && fx.rateToUsd > 0
+    && /^\d{4}-\d{2}-\d{2}$/.test(fx.rateDate)
+    && Number.isFinite(Date.parse(`${fx.rateDate}T00:00:00Z`))
+    && fx.sourceUrl.trim() && fx.sourceName.trim());
+  return hasUsd && hasOriginal && hasFx
+    && offer.dataStatus === "official-page" && offer.availability !== "unavailable"
+    && offer.quoteStatus === "quoted" && normalizedBasis(offer) === "full_price"
+    && !hasAdditionalEligibility(offer);
+}
+
+function lowestIds(offers: Offer[], audience: "regular" | "member"): string[] {
+  const eligible = offers.filter((offer) => isLowestPriceCandidate(offer) && offerAudience(offer) === audience);
+  const minimum = Math.min(...eligible.map((offer) => offer.priceUsdPerGpuUnit!));
+  return eligible.filter((offer) => offer.priceUsdPerGpuUnit === minimum).map((offer) => offer.id);
+}
+
+const periodOrder: Record<Offer["billingUnit"], number> = { "GPU-hour": 0, "GPU-month": 1 };
+const rentalOrder: Record<Offer["rentalType"], number> = { "On-demand": 0, Spot: 1, Reserved: 2, Monthly: 3, Other: 4 };
+
+function compareBuckets(a: OfferComparisonBucket, b: OfferComparisonBucket): number {
+  return periodOrder[a.billingUnit] - periodOrder[b.billingUnit]
+    || rentalOrder[a.rentalType] - rentalOrder[b.rentalType]
+    || (a.priceBasis === "full_price" ? 0 : 1) - (b.priceBasis === "full_price" ? 0 : 1)
+    || a.priceBasis.localeCompare(b.priceBasis)
+    || Math.min(...a.offers.map(sortableUsd)) - Math.min(...b.offers.map(sortableUsd))
+    || (a.vramGb ?? Infinity) - (b.vramGb ?? Infinity)
+    || (a.gpuVariant ?? "").localeCompare(b.gpuVariant ?? "")
+    || a.key.localeCompare(b.key);
+}
+
+/** Canonical model groups, then compatible configuration buckets, then USD ASC.
+ * Lowest badges are scoped to a bucket and audience, never across configurations.
+ * Input offers are retained (including dated/offline records) and never mutated.
+ */
+export function groupOffersForComparison(input: readonly Offer[]): OfferComparisonGroup[] {
+  const groups = new Map<string, Map<string, OfferComparisonBucket>>();
+  for (const offer of input) {
+    let buckets = groups.get(offer.gpuSlug);
+    if (!buckets) groups.set(offer.gpuSlug, buckets = new Map());
+    const key = comparisonBucketKey(offer);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, billingUnit: offer.billingUnit, rentalType: offer.rentalType, priceBasis: normalizedBasis(offer), vramGb: offer.vramGb, gpuVariant: normalizedVariant(offer), offers: [], lowestRegularIds: [], lowestMemberIds: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.offers.push(offer);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([gpuSlug, bucketsByKey]) => {
+    const buckets = [...bucketsByKey.values()].sort(compareBuckets).map((bucket) => {
+      bucket.offers.sort((a, b) => sortableUsd(a) - sortableUsd(b) || a.providerSlug.localeCompare(b.providerSlug) || a.id.localeCompare(b.id));
+      bucket.lowestRegularIds = lowestIds(bucket.offers, "regular");
+      bucket.lowestMemberIds = lowestIds(bucket.offers, "member");
+      return bucket;
+    });
+    return { gpuSlug, buckets, offers: buckets.flatMap((bucket) => bucket.offers) };
+  });
+}

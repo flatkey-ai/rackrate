@@ -52,8 +52,8 @@ export default async function Home() {
             </div>
           </div>
         </div>
-        <div className="ticker" aria-label="Supported GPU models">
-          <div className="ticker-track">
+        <div className="ticker" aria-label="Supported GPU models" tabIndex={0}>
+          <div className="ticker-track" style={{ animationDuration: `${(gpus.length * 320) / 24}s` }}>
             {[0, 1].map((group) => <div className="ticker-group" aria-hidden={group === 1} key={group}>{gpus.map((gpu) => <span key={`${group}-${gpu.slug}`}><i />{gpu.shortName}<small>{gpu.vramGb === null ? "Multiple variants" : `${gpu.vramGb} GB`}</small></span>)}</div>)}
           </div>
         </div>

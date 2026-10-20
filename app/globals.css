@@ -85,10 +85,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .terminal-stats strong { font-family: var(--font-mono); font-size: 18px; }
 
 .ticker { background: var(--acid); border-top: 1px solid var(--ink); overflow: hidden; }
-.ticker-track { display: flex; width: max-content; animation: ticker 30s linear infinite; will-change: transform; }
+.ticker:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
+/* Each 320px item takes 13⅓ seconds; the server sets the full duration at 24px/s. */
+.ticker-track { display: flex; width: max-content; animation: ticker 900s linear infinite; will-change: transform; }
+.ticker:is(:hover, :focus-within) .ticker-track { animation-play-state: paused; }
 .ticker-group { display: flex; flex: none; }
-.ticker-group > span { min-width: 190px; display: flex; align-items: center; gap: 9px; padding: 12px 24px; border-right: 1px solid rgba(17,21,17,.26); font-family: var(--font-mono); font-size: 11px; font-weight: 500; }
-.ticker-track i { width: 5px; height: 5px; background: var(--ink); }
+.ticker-group > span { width: 320px; flex: 0 0 320px; display: flex; align-items: center; gap: 9px; padding: 12px 24px; border-right: 1px solid rgba(17,21,17,.26); font-family: var(--font-mono); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.ticker-track i { width: 5px; height: 5px; flex: none; background: var(--ink); }
 .ticker-track small { margin-left: auto; opacity: .55; }
 @keyframes ticker { to { transform: translate3d(-50%, 0, 0); } }
 
@@ -745,7 +748,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; }
-  .ticker-track { animation: none; }
+  .ticker { overflow-x: auto; }
+  .ticker-track { animation: none; will-change: auto; }
+  .ticker-group[aria-hidden="true"] { display: none; }
   .button, .gpu-card { transition: none; }
 }
 
