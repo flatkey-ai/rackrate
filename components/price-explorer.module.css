@@ -117,6 +117,40 @@
 .details p { font-size: 11px; line-height: 1.7; color: #738164; overflow-wrap: anywhere; }
 .mobileResults { display: none; }
 
+.comparisonLegend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 0 28px 17px; color: #53624a; font-size: 10px; }
+.comparisonLegend > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.comparisonLegend i { width: 7px; height: 7px; border-radius: 50%; }
+.regularDot { background: #537f2e; }
+.memberDot { background: #8061a8; }
+.comparisonLegend p { margin: 0 0 0 auto; color: #65715b; line-height: 1.5; }
+.groupedResults { display: grid; gap: 20px; padding: 0 18px 20px; }
+.modelGroup { min-width: 0; overflow: hidden; border: 1px solid #d6decc; border-radius: 9px; }
+.modelHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; background: #eef4e4; border-bottom: 1px solid #d9e2cc; }
+.modelHeading > div { display: flex; align-items: center; gap: 11px; }
+.modelIcon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #c6d3b4; border-radius: 6px; color: #4a6730; font-size: 22px; }
+.modelHeading h3 { margin: 0; color: #26331b; font-size: 21px; font-weight: 800; letter-spacing: -.035em; }
+.modelHeading h3 a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.modelHeading p { margin: 0; color: #5c6e4c; font-size: 11px; white-space: nowrap; }
+.modelHeading p span { margin-inline: 8px; color: #96a684; }
+.comparisonBucket + .comparisonBucket { border-top: 1px solid #d6decc; }
+.bucketHeading { padding: 14px 22px 12px; background: #fafbf7; }
+.bucketHeading h4 { margin: 0; color: #354629; font-size: 12px; font-weight: 700; }
+.bucketHeading h4 > span { color: #a0ad91; margin-inline: 3px; }
+.bucketHeading p { display: flex; align-items: center; gap: 14px; margin: 5px 0 0; color: #65715b; font-size: 10px; line-height: 1.6; }
+.sortHint { margin-left: auto; flex: none; color: #6a7b59; font: 9px var(--font-mono); }
+.platformName { display: inline-block; color: #27331f; font-size: 13px; font-weight: 750; line-height: 1.5; }
+.platformName:hover { text-decoration: underline; text-underline-offset: 4px; }
+.rateLabel { display: inline-flex; align-items: center; padding: 3px 6px; border-radius: 4px; font-size: 10px; line-height: 1.4; font-weight: 650; }
+.regularRate { color: #526447; background: #eef3e7; }
+.memberRate { color: #715095; background: #f0eaf8; }
+.price > .lowestBadge { display: inline-block; margin: 0 0 4px; padding: 3px 7px; color: #395c1b; background: #dff1c7; border: 1px solid #c1dc9f; border-radius: 4px; font-size: 9px; font-weight: 750; letter-spacing: .01em; line-height: 1.4; }
+.price > .lowestMemberBadge { color: #69448d; background: #ede4f8; border-color: #d8c4ed; }
+.lowestPrice > strong { color: #365d18; font-weight: 700; }
+.lowestMemberPrice > strong { color: #715095; }
+.table tbody .lowestRow { background: #f4faeb; }
+.table tbody .lowestRow:hover { background: #edf6df; }
+.table tbody .lowestRow > td:first-child { box-shadow: inset 3px 0 #86ab52; }
+
 .tableFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 68px; padding: 15px 28px; border-top: 1px solid #e4e8dc; color: #65715b; font-size: 10px; }
 .tableFooter > a { color: #788869; }
 .pagination { display: flex; align-items: center; gap: 14px; }
@@ -169,6 +203,14 @@
   .offerCard > .details { margin: 12px -20px -20px; padding: 20px; border-radius: 0 0 8px 8px; }
   .tableFooter { padding-inline: 24px; }
   .partner { padding: 20px 24px; }
+  .comparisonLegend { padding-inline: 24px; }
+  .comparisonLegend p { width: 100%; margin-left: 0; }
+  .groupedResults { padding-inline: 14px; gap: 16px; }
+  .modelHeading { padding: 16px 18px; }
+  .modelHeading h3 { font-size: 21px; }
+  .bucketHeading { padding-inline: 18px; }
+  .cardTop .platformName { font-size: 15px; }
+  .lowestCard { border-color: #bad69a; background: #f9fcf4; box-shadow: inset 3px 0 #86ab52; }
 }
 
 @media (max-width: 620px) {
@@ -207,6 +249,19 @@
   .tableFooter > a { margin-left: auto; }
   .partner { padding: 18px 20px; align-items: flex-start; flex-direction: column; gap: 12px; }
   .partner > a { padding: 8px 11px; }
+  .comparisonLegend { padding: 0 20px 16px; font-size: 10px; }
+  .comparisonLegend p { font-size: 10px; }
+  .groupedResults { padding: 0 10px 14px; gap: 16px; }
+  .modelHeading { padding: 15px 14px; align-items: flex-start; }
+  .modelHeading h3 { font-size: 19px; }
+  .modelIcon { width: 25px; height: 25px; font-size: 19px; }
+  .modelHeading > div { gap: 8px; }
+  .modelHeading p { font-size: 10px; padding-top: 6px; }
+  .modelHeading p span { margin-inline: 4px; }
+  .bucketHeading { padding: 12px 14px; }
+  .bucketHeading p { flex-wrap: wrap; gap: 4px 12px; }
+  .sortHint { margin-left: 0; }
+  .price > .lowestBadge { font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) { .moreFilters > svg { transition: none; } }
