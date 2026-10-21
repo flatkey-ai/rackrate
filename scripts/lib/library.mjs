@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.11.0";
-export const LIBRARY_COMMIT = "3dac05148ecfc486011ec257e2104cca6dcf8ef5";
+export const LIBRARY_VERSION = "0.12.0";
+export const LIBRARY_COMMIT = "e4ba7376495b48f18285f19e5d7731bc6d69c286";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -34,14 +34,14 @@ const PROVIDERS = {
   azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
 };
 
-// Settings() deliberately bypasses .env and credentials inherited by this process.
+// Explicit Settings deliberately bypasses .env and inherited credentials.
 // The library owns collection only; RackRate owns persistence and publication.
 const PYTHON_COLLECTION_SETUP = `
 import json
 from gpu_price_monitor import Settings, __version__, collect_prices
 if __version__ != "${LIBRARY_VERSION}":
     raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
-result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)
+result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(source_policy="api_preferred"), include_coverage=True)
 `;
 export const PYTHON_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
@@ -139,6 +139,10 @@ export function validatePublicResult(result) {
     throw new Error(`Public collection was incomplete${failures.length ? `: ${failures.join(", ")}` : ""}; existing data was preserved`);
   }
   timestamp(result.collected_at, "collection timestamp");
+  if (result.execution?.runtime !== "python" || result.execution?.parsing !== "deterministic_rules"
+      || result.execution?.uses_llm !== false || result.execution?.source_policy !== "api_preferred") {
+    throw new Error("Unexpected collector execution policy; existing data was preserved");
+  }
   if (!Array.isArray(result.prices) || !result.prices.length || !Array.isArray(result.provider_results)) {
     throw new Error("Public collection has no prices or source results");
   }
@@ -381,11 +385,13 @@ export function buildRackRateDataset(_current, libraryResult) {
   return {
     schemaVersion: 2,
     generatedAt: libraryResult.collected_at,
-    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS] },
+    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS], sourcePolicy: "api_preferred", runtime: "python", usesLlm: false },
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
         additionalUrls: source.additional_source_urls ?? [],
+        collectionMethod: source.collection_method ?? null, selectionReason: source.selection_reason ?? null,
+        fallbackReason: source.fallback_reason ?? null, apiEndpoint: source.api_endpoint ?? null,
         status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
     ],
     offers,

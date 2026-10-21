@@ -26,6 +26,7 @@ function fixture(additional = []) {
   const prices = [...REQUIRED_PROVIDERS.map((provider) => quote(provider)), ...additional];
   return {
     schema_version: 1, collected_at: observedAt, status: "success", prices,
+    execution: { runtime: "python", parsing: "deterministic_rules", uses_llm: false, source_policy: "api_preferred" },
     provider_results: REQUIRED_PROVIDERS.map((provider) => ({
       provider, source_url: `https://example.com/${provider}`, source_type: "public_page",
       status: "success", observed_at: observedAt, returned_count: prices.filter((item) => item.provider === provider).length,
@@ -214,9 +215,20 @@ test("Python bridge uses explicit public Settings rather than dotenv or process 
   assert.equal(captured[0], "/custom/python");
   assert.deepEqual(captured[1], ["-c", PYTHON_COLLECTION_CODE]);
   assert.ok(PYTHON_COLLECTION_CODE.includes(`__version__ != "${LIBRARY_VERSION}"`));
-  assert.ok(PYTHON_COLLECTION_CODE.includes(`collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)`));
+  assert.ok(PYTHON_COLLECTION_CODE.includes(`collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(source_policy="api_preferred"), include_coverage=True)`));
   assert.ok(!PYTHON_COLLECTION_CODE.includes("from_env"));
   await assert.rejects(collectPublicLibrary({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
+});
+
+test("publication requires the deterministic Python API-preferred execution policy", () => {
+  for (const execution of [undefined,
+    { runtime: "python", parsing: "deterministic_rules", uses_llm: true, source_policy: "api_preferred" },
+    { runtime: "codex", parsing: "deterministic_rules", uses_llm: false, source_policy: "api_preferred" },
+    { runtime: "python", parsing: "model", uses_llm: false, source_policy: "api_preferred" },
+    { runtime: "python", parsing: "deterministic_rules", uses_llm: false, source_policy: "configured" },
+  ]) {
+    assert.throws(() => validatePublicResult({ ...fixture(), execution }), /execution policy/);
+  }
 });
 
 test("Python bundle serializes the same single collection with the library CSV exporter", async () => {

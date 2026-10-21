@@ -8,6 +8,7 @@ function snapshot(collectedAt) {
   const prices = REQUIRED_PROVIDERS.map((provider) => ({ provider, gpu_model: "H100", amount: "1.25",
     currency: "USD", unit: "gpu_hour", observed_at: collectedAt }));
   return { schema_version: 1, status: "success", collected_at: collectedAt, prices,
+    execution: { runtime: "python", parsing: "deterministic_rules", uses_llm: false, source_policy: "api_preferred" },
     provider_results: REQUIRED_PROVIDERS.map((provider) => ({ provider, status: "success", error: null,
       returned_count: 1, observed_at: collectedAt })),
     coverage: { collection_status: "success", scope: "returned_quotes", excluded_quote_indices: [],
