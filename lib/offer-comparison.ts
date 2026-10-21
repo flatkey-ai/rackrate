@@ -20,6 +20,14 @@ export type OfferComparisonGroup = {
   offers: Offer[];
 };
 
+export type OfferComparisonSummary = {
+  key: string;
+  billingUnit: Offer["billingUnit"];
+  rentalType: Offer["rentalType"];
+  lowestRegularOffers: Offer[];
+  lowestMemberOffers: Offer[];
+};
+
 const membershipPattern = /\bmember(?:ship)?\b|会员/i;
 const ordinaryMembershipPattern = /\bnon[- ]?members?\b|\bmembership (?:is )?not required\b|\bno membership (?:is )?required\b|无需会员|非会员/i;
 const eligibilityPattern = /\breserved\b|\bcommitment\b|\bprepaid\b|\bnew[\s-]+customers?\b|\bpromot(?:ion|ional)\b|\bpurchase limit\b|\bminimum[\s-]+(?:term|duration|quantity|spend)\b|prices apply to companies from Israel|仅新客户|新客|限购|仅限/i;
@@ -84,14 +92,43 @@ export function isLowestPriceCandidate(offer: Offer): boolean {
     && !hasAdditionalEligibility(offer);
 }
 
-function lowestIds(offers: Offer[], audience: "regular" | "member"): string[] {
+function lowestOffers(offers: readonly Offer[], audience: "regular" | "member"): Offer[] {
   const eligible = offers.filter((offer) => isLowestPriceCandidate(offer) && offerAudience(offer) === audience);
   const minimum = Math.min(...eligible.map((offer) => offer.priceUsdPerGpuUnit!));
-  return eligible.filter((offer) => offer.priceUsdPerGpuUnit === minimum).map((offer) => offer.id);
+  return eligible.filter((offer) => offer.priceUsdPerGpuUnit === minimum);
+}
+
+function lowestIds(offers: Offer[], audience: "regular" | "member"): string[] {
+  return lowestOffers(offers, audience).map((offer) => offer.id);
 }
 
 const periodOrder: Record<Offer["billingUnit"], number> = { "GPU-hour": 0, "GPU-month": 1 };
 const rentalOrder: Record<Offer["rentalType"], number> = { "On-demand": 0, Spot: 1, Reserved: 2, Monthly: 3, Other: 4 };
+
+/** Starting minima for a collapsed model, separated by period and purchase plan.
+ * Unlike configuration-level lowest badges, these summaries span configurations.
+ * Return original offers so callers can show the configuration and node size of
+ * every tied minimum. Missing eligible prices stay empty instead of using a
+ * reference, an offline offer, a component price, or an invented zero.
+ */
+export function summarizeComparisonGroup(group: OfferComparisonGroup): OfferComparisonSummary[] {
+  const summaries = new Map<string, { summary: OfferComparisonSummary; offers: Offer[] }>();
+  for (const offer of group.offers) {
+    const key = JSON.stringify([offer.billingUnit, offer.rentalType]);
+    let entry = summaries.get(key);
+    if (!entry) {
+      entry = { summary: { key, billingUnit: offer.billingUnit, rentalType: offer.rentalType, lowestRegularOffers: [], lowestMemberOffers: [] }, offers: [] };
+      summaries.set(key, entry);
+    }
+    entry.offers.push(offer);
+  }
+  return [...summaries.values()].map(({ summary, offers }) => ({
+    ...summary,
+    lowestRegularOffers: lowestOffers(offers, "regular"),
+    lowestMemberOffers: lowestOffers(offers, "member"),
+  })).sort((a, b) => periodOrder[a.billingUnit] - periodOrder[b.billingUnit]
+    || rentalOrder[a.rentalType] - rentalOrder[b.rentalType]);
+}
 
 function compareBuckets(a: OfferComparisonBucket, b: OfferComparisonBucket): number {
   return periodOrder[a.billingUnit] - periodOrder[b.billingUnit]

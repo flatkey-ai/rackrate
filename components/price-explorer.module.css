@@ -125,13 +125,45 @@
 .comparisonLegend p { margin: 0 0 0 auto; color: #65715b; line-height: 1.5; }
 .groupedResults { display: grid; gap: 20px; padding: 0 18px 20px; }
 .modelGroup { min-width: 0; overflow: hidden; border: 1px solid #d6decc; border-radius: 9px; }
-.modelHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; background: #eef4e4; border-bottom: 1px solid #d9e2cc; }
-.modelHeading > div { display: flex; align-items: center; gap: 11px; }
+.modelHeading { background: #eef4e4; border-bottom: 1px solid #d9e2cc; }
 .modelIcon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #c6d3b4; border-radius: 6px; color: #4a6730; font-size: 22px; }
-.modelHeading h3 { margin: 0; color: #26331b; font-size: 21px; font-weight: 800; letter-spacing: -.035em; }
-.modelHeading h3 a:hover { text-decoration: underline; text-underline-offset: 4px; }
-.modelHeading p { margin: 0; color: #5c6e4c; font-size: 11px; white-space: nowrap; }
-.modelHeading p span { margin-inline: 8px; color: #96a684; }
+.modelHeading h3 { margin: 0; }
+.modelToggle { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; width: 100%; min-height: 66px; padding: 16px 22px; border: 0; background: transparent; color: #26331b; cursor: pointer; text-align: left; }
+.modelToggle:hover { background: #e6efd9; }
+.modelToggle:focus-visible { outline-offset: -3px; }
+.modelIdentity { display: flex; align-items: center; gap: 11px; min-width: 0; font-size: 21px; font-weight: 800; letter-spacing: -.035em; }
+.modelIcon { flex: none; }
+.modelCount { color: #5c6e4c; font-size: 11px; font-weight: 500; }
+.modelToggleLabel { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; color: #4a6434; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.modelToggleLabel svg, .groupFooter svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.modelToggleLabel svg[data-open="true"], .groupFooter svg[data-open="true"] { transform: rotate(180deg); }
+.modelSummaries { display: grid; gap: 17px; padding: 16px 22px 20px; background: #fdfefa; }
+.summaryRow + .summaryRow { padding-top: 16px; border-top: 1px solid #e3e8da; }
+.summaryPlan { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 12px; margin-bottom: 10px; color: #647359; font-size: 10px; line-height: 1.5; }
+.summaryPlan strong { color: #3e5230; font-size: 11px; }
+.summaryPlan small { margin-left: auto; color: #727e67; font-size: 10px; }
+.summaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.summaryPrice { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 14px 16px; border: 1px solid #d9e5ca; border-radius: 7px; background: #f4f9ed; color: #536b3e; }
+.summaryLabel { color: #4b6b2d; font-size: 10px; font-weight: 750; }
+.summaryPrice > strong { display: block; margin-top: 6px; color: #355d18; font: 650 19px/1.5 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.summaryPlatforms { margin-top: 4px; color: #344b24; font-size: 11px; font-weight: 650; line-height: 1.6; }
+.summaryPlatforms small { margin-left: 7px; color: #657b53; font-size: 10px; font-weight: 500; }
+.summaryConfiguration, .summaryLocation, .summaryOriginal { display: block; margin-top: 4px; font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; }
+.summaryLocation { color: #6b795f; }
+.summaryOriginal { color: #68795a; }
+.summaryOriginal time { white-space: nowrap; }
+.summaryMember { border-color: #e1d7ee; background: #f9f5fe; color: #7c6495; }
+.summaryMember .summaryLabel, .summaryMember > strong { color: #715095; }
+.summaryMember .summaryPlatforms { color: #655077; }
+.summaryMember .summaryPlatforms small, .summaryMember .summaryLocation, .summaryMember .summaryOriginal { color: #7a698c; }
+.summaryPrice > .noSummaryPrice { color: #a2ad96; font-weight: 500; }
+.summaryMember > .noSummaryPrice { color: #b2a7bf; }
+.summaryEmpty { max-width: 230px; margin-top: 5px; color: #7a8471; font-size: 11px; line-height: 1.6; }
+.modelQuotes { border-top: 1px solid #d6decc; }
+.groupFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 22px; background: #f6f9f0; border-top: 1px solid #dfe6d4; }
+.groupFooter a, .groupFooter button { color: #587142; font-size: 11px; font-weight: 600; }
+.groupFooter a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.groupFooter button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .comparisonBucket + .comparisonBucket { border-top: 1px solid #d6decc; }
 .bucketHeading { padding: 14px 22px 12px; background: #fafbf7; }
 .bucketHeading h4 { margin: 0; color: #354629; font-size: 12px; font-weight: 700; }
@@ -206,8 +238,9 @@
   .comparisonLegend { padding-inline: 24px; }
   .comparisonLegend p { width: 100%; margin-left: 0; }
   .groupedResults { padding-inline: 14px; gap: 16px; }
-  .modelHeading { padding: 16px 18px; }
-  .modelHeading h3 { font-size: 21px; }
+  .modelToggle { padding-inline: 18px; }
+  .modelIdentity { font-size: 21px; }
+  .modelSummaries { padding-inline: 18px; }
   .bucketHeading { padding-inline: 18px; }
   .cardTop .platformName { font-size: 15px; }
   .lowestCard { border-color: #bad69a; background: #f9fcf4; box-shadow: inset 3px 0 #86ab52; }
@@ -252,12 +285,22 @@
   .comparisonLegend { padding: 0 20px 16px; font-size: 10px; }
   .comparisonLegend p { font-size: 10px; }
   .groupedResults { padding: 0 10px 14px; gap: 16px; }
-  .modelHeading { padding: 15px 14px; align-items: flex-start; }
-  .modelHeading h3 { font-size: 19px; }
+  .modelToggle { padding: 14px; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }
+  .modelIdentity { font-size: 18px; gap: 8px; }
+  .modelCount { grid-column: 1; grid-row: 2; padding-left: 33px; font-size: 10px; }
+  .modelToggleLabel { grid-column: 2; grid-row: 1 / span 2; font-size: 10px; gap: 5px; }
   .modelIcon { width: 25px; height: 25px; font-size: 19px; }
-  .modelHeading > div { gap: 8px; }
-  .modelHeading p { font-size: 10px; padding-top: 6px; }
-  .modelHeading p span { margin-inline: 4px; }
+  .modelSummaries { padding: 13px 12px 14px; }
+  .summaryPlan { gap: 4px 9px; }
+  .summaryPlan small { width: 100%; margin-left: 0; font-size: 9px; }
+  .summaryGrid { gap: 8px; }
+  .summaryPrice { padding: 11px 10px; }
+  .summaryPrice > strong { font-size: 13px; }
+  .summaryLabel { font-size: 10px; }
+  .summaryPlatforms, .summaryEmpty { font-size: 10px; }
+  .summaryPlatforms small { display: block; margin-left: 0; font-size: 9px; }
+  .summaryConfiguration, .summaryLocation, .summaryOriginal { font-size: 9px; line-height: 1.6; }
+  .groupFooter { padding-inline: 14px; }
   .bucketHeading { padding: 12px 14px; }
   .bucketHeading p { flex-wrap: wrap; gap: 4px 12px; }
   .sortHint { margin-left: 0; }
