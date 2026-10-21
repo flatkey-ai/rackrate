@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPricingData, type Offer, type PricingDataset } from "./data.ts";
-import { getOfferCountryCodes, isRegionSpecificPrice, offerMatchesRegion, publishedRegionLabel, regionMappingSources } from "./region-matching.ts";
+import { getOfferCountryCodes, isRegionSpecificPrice, matchesCountryRegionSelection, offerMatchesRegion, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection, regionMappingSources } from "./region-matching.ts";
 import { cheapestComparableOffer } from "./pricing.ts";
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
@@ -109,4 +109,39 @@ test("dated regional references are counted separately from both official prices
   const reference = quote({ dataStatus: "seed", providerSlug: "vast-ai", region: "Europe", regions: ["Europe"], countryCode: "EU" });
   const data = createPricingData(dataset([reference]));
   assert.deepEqual(data.getRegionCoverage("europe"), { offerCount: 1, officialCount: 0, referenceCount: 1, offlineCount: 0, regionalPriceCount: 0, coverageOnlyCount: 0 });
+});
+
+test("country and region selection joins the same code instead of crossing a multi-country catalog record", () => {
+  const multi = quote({ providerSlug: "nebius", region: "eu-north1, us-central1", regions: ["eu-north1", "us-central1"] });
+  const original = JSON.stringify(multi);
+  assert.deepEqual(publishedRegionsForCountry(multi, "US"), ["us-central1"]);
+  assert.deepEqual(publishedRegionsForCountry(multi, "FI"), ["eu-north1"]);
+  assert.deepEqual(publishedRegionsForCountry(multi, "CA"), []);
+  assert.equal(matchesCountryRegionSelection(multi, "US", "us-central1"), true);
+  assert.equal(matchesCountryRegionSelection(multi, "US", "eu-north1"), false);
+  assert.equal(matchesCountryRegionSelection(multi, "FI", "us-central1"), false);
+  assert.equal(matchesCountryRegionSelection(multi, "all", "eu-north1"), true);
+  assert.equal(matchesCountryRegionSelection(multi, "US", "all"), true);
+  assert.equal(JSON.stringify(multi), original);
+});
+
+test("country-region linking uses the provider's mapping and supports an explicit whole-record country", () => {
+  const unrelated = quote({ providerSlug: "other-cloud", countryCode: "US", region: "eu-north1", regions: ["eu-north1"] });
+  assert.deepEqual(publishedRegionsForCountry(unrelated, "US"), ["eu-north1"]);
+  assert.deepEqual(publishedRegionsForCountry(unrelated, "FI"), []);
+  const offline = quote({ providerSlug: "ucloud", countryCode: "CN", region: "cn-wlcb", regions: ["cn-wlcb"], zones: ["cn-wlcb-01"] });
+  assert.equal(matchesCountryRegionSelection(offline, "CN", "cn-wlcb"), true);
+  assert.equal(matchesCountryRegionSelection(offline, "US", "cn-wlcb"), false);
+  assert.deepEqual(publishedRegionsForCountry(offline, "CN"), ["cn-wlcb"]);
+  assert.deepEqual(publishedZonesForSelection(offline, "CN", "cn-wlcb"), ["cn-wlcb-01"]);
+  assert.deepEqual(publishedZonesForSelection(offline, "US", "cn-wlcb"), []);
+});
+
+test("a partial multi-region selection cannot borrow zones with no published region association", () => {
+  const multi = quote({ providerSlug: "nebius", region: "eu-north1, us-central1", regions: ["eu-north1", "us-central1"], zones: ["zone-north", "zone-central"] });
+  assert.deepEqual(publishedZonesForSelection(multi, "all", "all"), ["zone-north", "zone-central"]);
+  assert.deepEqual(publishedZonesForSelection(multi, "US", "all"), []);
+  assert.deepEqual(publishedZonesForSelection(multi, "US", "us-central1"), []);
+  assert.deepEqual(publishedZonesForSelection(multi, "US", "eu-north1"), []);
+  assert.deepEqual(multi.zones, ["zone-north", "zone-central"]);
 });

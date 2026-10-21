@@ -9,7 +9,7 @@ import { trackSiteEvent } from "@/components/site-analytics";
 import { FilterSelect } from "@/components/filter-select";
 import { GpuComparisonGroup } from "@/components/gpu-comparison-group";
 import { groupOffersForComparison, offerAudience, matchesPriceRegionFilter, priceRegionCoverage } from "@/lib/offer-comparison";
-import { getOfferCountryCodes, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
+import { getOfferCountryCodes, matchesCountryRegionSelection, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection } from "@/lib/region-matching";
 import styles from "./price-explorer.module.css";
 
 const unique = (items: string[]) => [...new Set(items)].sort();
@@ -49,13 +49,13 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
   const countryOptions = useMemo(() => unique(locationOffers.flatMap(getOfferCountryCodes)).sort((a, b) => (countryNames.of(a) ?? a).localeCompare(countryNames.of(b) ?? b)), [locationOffers]);
   const regionOptions = useMemo(() => {
     const entries = new Map<string, string>();
-    for (const offer of locationOffers.filter((entry) => country === "all" || getOfferCountryCodes(entry).includes(country))) {
-      for (const code of publishedRegionCodes(offer)) if (!entries.has(code)) entries.set(code, publishedRegionLabel(offer, code));
+    for (const offer of locationOffers) {
+      for (const code of publishedRegionsForCountry(offer, country)) if (!entries.has(code)) entries.set(code, publishedRegionLabel(offer, code));
     }
     return [...entries].sort((a, b) => a[1].localeCompare(b[1]));
   }, [locationOffers, country]);
-  const zoneOptions = useMemo(() => unique(locationOffers.filter((offer) => (country === "all" || getOfferCountryCodes(offer).includes(country))
-    && matchesPriceRegionFilter(offer, region)).flatMap((offer) => offer.zones)), [locationOffers, country, region]);
+  const zoneOptions = useMemo(() => unique(locationOffers.filter((offer) => matchesCountryRegionSelection(offer, country, region)
+    && matchesPriceRegionFilter(offer, region)).flatMap((offer) => publishedZonesForSelection(offer, country, region))), [locationOffers, country, region]);
   const currencies = useMemo(() => unique(scopedOffers.map((offer) => offer.sourceCurrency)), [scopedOffers]);
   const gpuMap = useMemo(() => new Map(gpus.map((entry) => [entry.slug, entry])), [gpus]);
   const providerMap = useMemo(() => new Map(providers.map((entry) => [entry.slug, entry])), [providers]);
@@ -66,8 +66,8 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
       return (!term || haystack.includes(term)) && (gpu === "all" || offer.gpuSlug === gpu)
         && (provider === "all" || offer.providerSlug === provider) && (rental === "all" || offer.rentalType === rental)
         && (currency === "all" || offer.sourceCurrency === currency) && (unit === "all" || offer.billingUnit === unit)
-        && (country === "all" || getOfferCountryCodes(offer).includes(country))
-        && matchesPriceRegionFilter(offer, region) && (zone === "all" || (zone === "__unpublished" ? offer.zones.length === 0 : offer.zones.includes(zone)))
+        && matchesCountryRegionSelection(offer, country, region)
+        && matchesPriceRegionFilter(offer, region) && (zone === "all" || (zone === "__unpublished" ? offer.zones.length === 0 : publishedZonesForSelection(offer, country, region).includes(zone)))
         && (basis === "all" || offer.priceBasis === basis)
         && (!hideConditional || offerAudience(offer) === "regular");
     }).sort(compareOffers);
@@ -140,7 +140,7 @@ export function PriceExplorer({ offers, gpus, providers, generatedAt, sources, g
     {groups.length > 0 && <div className={styles.comparisonLegend}><p>{requireRegionalPrice ? "Lowest labels require a price tied to the selected location. Platform coverage alone does not qualify." : "Starting rates across configurations. Expand a model for platform quotes."}</p></div>}
     <div className={styles.groupedResults}>{visibleGroups.map((group) => <GpuComparisonGroup key={group.gpuSlug} group={group} gpu={gpuMap.get(group.gpuSlug)!} providers={providerMap} id={`${id}-${group.gpuSlug}`} />)}</div>
     {filtered.length === 0 && <div className={styles.empty}><span aria-hidden="true">⌕</span><h3>{matchedOffers.length > 0 ? `${matchedOffers.length} matching offers are offline` : "No matching offers"}</h3><p>{matchedOffers.length > 0 ? "These published prices are unavailable. Include them to compare without changing your filters." : "Try another model or region, or include every sourced record."}</p><button type="button" onClick={matchedOffers.length > 0 ? () => { setAvailableOnly(false); setPage(1); } : showAll}>{matchedOffers.length > 0 ? "Include offline offers" : "Show all offers"}</button></div>}
-    <footer className={styles.tableFooter}><span>{groups.length ? `Models ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, groups.length)} of ${groups.length} · ${visibleOfferCount} offers across these models` : "0 offers"}</span>{groups.length > pageSize && <nav className={styles.pagination} aria-label="GPU model pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous models">←</button><span>{currentPage} / {Math.ceil(groups.length / pageSize)}</span><button disabled={currentPage * pageSize >= groups.length} onClick={() => setPage(currentPage + 1)} aria-label="Next models">→</button></nav>}<a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report an issue ↗</a></footer>
+    <footer className={styles.tableFooter}><span>{groups.length ? `${groups.length === 1 ? "Model" : "Models"} ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, groups.length)} of ${groups.length} · ${visibleOfferCount} ${visibleOfferCount === 1 ? "offer" : "offers"} across ${visibleGroups.length === 1 ? "this model" : "these models"}` : "0 offers"}</span>{groups.length > pageSize && <nav className={styles.pagination} aria-label="GPU model pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous models">←</button><span>{currentPage} / {Math.ceil(groups.length / pageSize)}</span><button disabled={currentPage * pageSize >= groups.length} onClick={() => setPage(currentPage + 1)} aria-label="Next models">→</button></nav>}<a href="https://github.com/flatkey-ai/rackrate/issues/new?labels=data-correction&amp;title=Data%20correction%3A%20" target="_blank" rel="nofollow noreferrer">Report an issue ↗</a></footer>
     <aside className={styles.partner}><div><span>FLATKEY COMPUTE · COMMERCIAL PARTNER</span><p>Need a configuration matched to your workload?</p></div><a href={flatkeyWebsiteUrl("comparison_results", "price_comparison")} target="_blank" rel="sponsored nofollow noreferrer">Request a quote <span>↗</span></a></aside>
   </section>;
 }

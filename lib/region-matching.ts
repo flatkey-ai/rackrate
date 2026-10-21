@@ -79,6 +79,44 @@ export function getOfferCountryCodes(offer: LocatedOffer): string[] {
   return [...new Set([...explicit, ...mapped])];
 }
 
+/** Narrow the codes on a multi-region record to the selected country. A known
+ * code uses its own provider's mapping, never the union of the record's countries.
+ * An explicitly published whole-record country can resolve unmapped codes only
+ * when none of the record's documented codes contradict that country. */
+export function publishedRegionsForCountry(offer: LocatedOffer, country: string): string[] {
+  const codes = publishedRegionCodes(offer);
+  if (country === "all") return codes;
+  const explicit = offer.countryCode === country && !["EU", "GL"].includes(country);
+  const explicitIsConsistent = explicit && codes.every((code) => {
+    const mapped = mappingFor(offer.providerSlug, code)?.country;
+    return mapped === undefined || mapped === country;
+  });
+  return codes.filter((code) => {
+    const mapped = mappingFor(offer.providerSlug, code)?.country;
+    return mapped !== undefined ? mapped === country : explicitIsConsistent;
+  });
+}
+
+/** Special region filters classify price provenance elsewhere. This helper
+ * enforces the geographic join: a concrete region must belong to the selected
+ * country on this same provider's source record. */
+export function matchesCountryRegionSelection(offer: LocatedOffer, country: string, region: string): boolean {
+  if (country !== "all" && !getOfferCountryCodes(offer).includes(country)) return false;
+  if (["all", "__published", "__unpublished"].includes(region)) return true;
+  return publishedRegionsForCountry(offer, country).includes(region);
+}
+
+/** A list of zones alone has no zone-to-region relation. It is safe to retain
+ * the zones when the selection covers the record's whole location scope (as on
+ * single-region UCloud records). Partial multi-region selections cannot borrow
+ * the unassigned zones from another country or region. */
+export function publishedZonesForSelection(offer: LocatedOffer & Pick<Offer, "zones">, country: string, region: string): string[] {
+  if (!matchesCountryRegionSelection(offer, country, region)) return [];
+  const concreteRegion = !["all", "__published", "__unpublished"].includes(region);
+  const selected = concreteRegion ? [region] : publishedRegionsForCountry(offer, country);
+  return publishedRegionCodes(offer).every((code) => selected.includes(code)) ? [...offer.zones] : [];
+}
+
 export function offerMatchesRegion(offer: LocatedOffer, region: Pick<RegionProfile, "countryCodes" | "regionNames">): boolean {
   if (offer.countryCode && region.countryCodes.includes(offer.countryCode)) return true;
   const codes = publishedRegionCodes(offer);
