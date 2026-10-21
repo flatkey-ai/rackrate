@@ -47,5 +47,5 @@ export async function refreshPrices({
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const output = await refreshPrices();
   const official = output.offers.filter((offer) => offer.dataStatus === "official-page");
-  console.log(`Collected ${official.length} public records from ${output.sources.filter((source) => source.status === "ok").length} tracked providers; published ${buildCompactPriceTable(output).rows.length} verified regional GPU-hour quotes to data/prices.csv.`);
+  console.log(`Collected ${official.length} public records from ${output.sources.filter((source) => source.status === "ok").length} tracked providers; published ${buildCompactPriceTable(output).rows.length} numeric GPU-hour catalog and regional quotes to data/prices.csv.`);
 }

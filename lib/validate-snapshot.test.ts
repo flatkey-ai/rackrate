@@ -169,8 +169,12 @@ test("unknown references, duplicate IDs and invalid catalog URLs are rejected", 
 
 test("monthly original and USD amounts cannot be misrepresented as hourly", () => {
   const input = fresh();
-  const monthly = input.offers.find((entry: { billingUnit: string }) => entry.billingUnit === "GPU-month");
+  // Build a monthly audit record explicitly; current snapshots may be hourly-only.
+  const monthly = input.offers.find((entry: { quoteStatus: string }) => entry.quoteStatus === "quoted");
   assert.ok(monthly);
+  Object.assign(monthly, { billingUnit: "GPU-month", billingMode: "monthly", rentalType: "Monthly", pricePerGpuHour: null });
+  if (monthly.instancePrice != null) monthly.instanceBillingUnit = "instance-month";
+  assert.equal(validatePricingDataset(input, observed), input);
   monthly.pricePerGpuHour = monthly.priceUsdPerGpuUnit;
   assert.throws(() => validatePricingDataset(input, observed), /hourly period mismatch/);
   monthly.pricePerGpuHour = null;
@@ -197,11 +201,16 @@ test("source decimals, dollar amounts, nulls and exchange-rate provenance must a
 });
 
 test("arrays, source links, offline status and coverage references are validated", () => {
+  // Offline audit rows are valid only when their presentation status agrees.
+  const offline = fresh();
+  Object.assign(offline.offers[0], { sourceAvailability: "offline", availability: "unavailable" });
+  assert.equal(validatePricingDataset(offline, observed), offline);
+  offline.offers[0].availability = "unknown";
+  assert.throws(() => validatePricingDataset(offline, observed), /offline availability/);
   const mutations: Array<(data: typeof original) => void> = [
     (data) => { data.offers[0].conditions = "member only"; },
     (data) => { data.offers.find((entry: { dataStatus: string }) => entry.dataStatus === "official-page").regions = [42]; },
     (data) => { data.offers[0].sourceUrl = "file:///tmp/prices"; },
-    (data) => { data.offers.find((entry: { sourceAvailability?: string }) => entry.sourceAvailability === "offline").availability = "unknown"; },
     (data) => { data.coverage.collection_status = "partial"; },
     (data) => { data.coverage.source_summary.success_count = 10; },
     (data) => { data.coverage.models[0].quote_indices[0] = 999999; },

@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.12.0";
-export const LIBRARY_COMMIT = "e4ba7376495b48f18285f19e5d7731bc6d69c286";
+export const LIBRARY_VERSION = "0.13.0";
+export const LIBRARY_COMMIT = "f100946748acc4fdba7f06cf1083b44fa612e63d";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -310,6 +310,7 @@ export function normalizeLibraryResult(result) {
       promotion: quote.promotion ?? null, selectedConfiguration: quote.selected_configuration ?? null,
       sourceConditions: quote.conditions ?? null, minimumCommitment: quote.minimum_commitment ?? null,
       pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
+      productLine: quote.product_line ?? null,
       region: regions.length ? regions.join(", ") : "Not published", regions, zones,
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
       countryCode, computeCountries, location: quote.location ?? null,
@@ -319,7 +320,7 @@ export function normalizeLibraryResult(result) {
       coverageCountries: strings(quote.coverage_countries ?? [], "coverage countries"),
       availability, sourceAvailability: rawAvailability,
       egress: "Not published", sourceUrl: quote.public_url ?? quote.source_url,
-      apiSourceUrl: quote.public_url ? quote.source_url : null,
+      apiSourceUrl: quote.api_endpoint ?? quote.api_url ?? (quote.public_url ? quote.source_url : null),
       sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
       effectiveFrom: quote.effective_from ?? null, effectiveUntil: quote.effective_until ?? null,
       sourceSnapshotAt: quote.source_snapshot_at ?? null,

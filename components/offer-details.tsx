@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Offer } from "@/lib/data";
 import { availabilityLabel, billingUnitLabel, cloudTierLabel, isAccountSpecificPrice, priceBasisLabel } from "@/lib/pricing";
 import { offerAudience } from "@/lib/offer-comparison";
+import { isCatalogPriceOffer, offerProviderLabel } from "@/lib/offer-geography.mjs";
 import { getOfferCountryCodes, isRegionSpecificPrice, publishedPriceRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
 
 type PublicOfferDetails = Offer & {
@@ -10,7 +11,6 @@ type PublicOfferDetails = Offer & {
   sourceConditions?: Record<string, unknown> | null;
   minimumCommitment?: unknown;
   membershipDiscount?: string | null;
-  pricingProductScope?: string[] | null;
   billingMeter?: string | null;
   taxScope?: string | null;
   effectiveFrom?: string | null;
@@ -113,9 +113,13 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   const countries = getOfferCountryCodes(offer);
   const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
   const terms: DetailItem[] = [
-    ["Price country", countries.map((code) => `${countryNames.of(code) ?? code} (${code})`).join(" · ")],
-    ["Price region", publishedPriceRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ")],
+    ["Price country", countries.map((code) => `${countryNames.of(code) ?? code} (${code})`).join(" · ") || "Not specified"],
+    ["Price region", publishedPriceRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ") || "Not specified"],
   ];
+  if (isCatalogPriceOffer(offer)) terms.unshift(["Price scope", "Catalog price; region not specified. This does not establish a worldwide rate."]);
+  if (offer.productLine || offerProviderLabel(offer) === "UCloud · CompShare") {
+    terms.unshift(["Product line", offerProviderLabel(offer, offer.productLine ?? offer.providerSlug)]);
+  }
   if (zones.length) terms.push(["Zone", zones.join(" · ")]);
   const audience = offerAudience(offer);
   const tier = isAccountSpecificPrice(offer) ? (/contract/i.test(offer.accountScope ?? "") ? "Account contract quote" : "Account-specific quote")
@@ -134,7 +138,7 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   if (published.sourceConditions) additional.push(["Source terms", sourceValue(published.sourceConditions)]);
   if (published.selectedConfiguration) additional.push(["Selected configuration", sourceValue(published.selectedConfiguration)]);
   if (published.membershipDiscount) additional.push(["Membership discount", published.membershipDiscount]);
-  if (published.pricingProductScope?.length) additional.push(["Applicable products", published.pricingProductScope.join(" · ")]);
+  if (published.pricingProductScope?.length) additional.push(["Applicable products", sourceValue(published.pricingProductScope)]);
   if (published.billingMeter) additional.push(["Billing meter", published.billingMeter]);
   if (Array.isArray(resources.disks) && resources.disks.length) additional.push(["Disks", sourceValue(resources.disks)]);
   const locationSource = offer.locationSource?.source_url ?? offer.locationSource?.api_url ?? offer.locationSource?.url;

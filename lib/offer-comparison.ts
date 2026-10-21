@@ -1,7 +1,7 @@
 import type { Offer } from "./data";
 import { isPlatformCoverage, isRegionSpecificPrice, publishedPriceRegionCodes } from "./region-matching.ts";
 import { isAccountSpecificPrice } from "./pricing.ts";
-import { isComparableRegionalOffer } from "./offer-geography.mjs";
+import { isMarketHourlyOffer } from "./offer-geography.mjs";
 
 export type OfferAudience = "regular" | "member" | "conditional";
 
@@ -56,7 +56,9 @@ const ordinaryMembershipPattern = /\bnon[- ]?members?\b|\bmembership (?:is )?not
 const eligibilityPattern = /\breserved\b|\bcommitment\b|\bprepaid\b|\bnew[\s-]+customers?\b|\bpromot(?:ion|ional)\b|\bpurchase limit\b|\bminimum[\s-]+(?:term|duration|quantity|spend)\b|prices apply to companies from Israel|仅新客户|新客|限购|仅限/i;
 
 export function isMemberPrice(offer: Offer): boolean {
-  return offer.membershipRequired === true || offer.conditions.some((condition) =>
+  if (offer.membershipRequired === true || offer.pricingTier === "member") return true;
+  if (offer.membershipRequired === false || ["ordinary", "regular"].includes(offer.pricingTier ?? "")) return false;
+  return offer.conditions.some((condition) =>
     membershipPattern.test(condition) && !ordinaryMembershipPattern.test(condition),
   );
 }
@@ -120,8 +122,8 @@ export function isLowestPriceCandidate(offer: Offer, requireRegionalPrice = fals
  * actual regular Spot quote, with its own purchase-mode label at the call site.
  * Never compare the two modes by price or substitute a restricted/member rate. */
 export function directoryHeadlineOffer(offers: readonly Offer[]): Offer | undefined {
-  const eligible = offers.filter((offer) => isComparableRegionalOffer(offer)
-    && isLowestPriceCandidate(offer, true) && offerAudience(offer) === "regular");
+  const eligible = offers.filter((offer) => isMarketHourlyOffer(offer)
+    && isLowestPriceCandidate(offer) && offerAudience(offer) === "regular");
   for (const mode of ["On-demand", "Spot"] as const) {
     const selected = eligible.filter((offer) => offer.rentalType === mode)
       .sort((a, b) => a.priceUsdPerGpuUnit! - b.priceUsdPerGpuUnit! || a.id.localeCompare(b.id));

@@ -1,6 +1,6 @@
 import { cheapestComparableOffer } from "./pricing.ts";
 import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from "./region-matching.ts";
-import { isComparableRegionalOffer } from "./offer-geography.mjs";
+import { isComparableRegionalOffer, isMarketHourlyOffer, isCatalogPriceOffer } from "./offer-geography.mjs";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
@@ -43,6 +43,9 @@ export type Offer = {
   id: string;
   gpuSlug: string;
   providerSlug: string;
+  productType?: string;
+  productLine?: string | null;
+  pricingProductScope?: string | string[] | null;
   gpuModel?: string;
   rawGpuModel?: string;
   rawName?: string;
@@ -460,11 +463,10 @@ export const regions: RegionProfile[] = [
 export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies by listing" : `${gpu.vramGb} GB ${gpu.memoryType}`;
 
 export function createPricingData(dataset: PricingDataset) {
-  // Keep the complete source collection for audit/status. Only complete numeric
-  // country-and-region-bound GPU-hour quotes reach the current comparison.
+  // Audit all source records; display actual hourly catalog and regional rates.
   const collectedOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
     && offer.dataStatus === "official-page");
-  const currentOffers = collectedOffers.filter(isComparableRegionalOffer);
+  const currentOffers = collectedOffers.filter(isMarketHourlyOffer);
   const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
   const currentProviderSlugs = new Set(currentOffers.map((offer) => offer.providerSlug));
   const gpuCatalog = new Map(curatedGpus.filter((gpu) => currentGpuSlugs.has(gpu.slug)).map((gpu) => [gpu.slug, gpu]));
@@ -525,7 +527,7 @@ export function createPricingData(dataset: PricingDataset) {
   const getOffersForRegion = (slug: string) => {
     const region = getRegion(slug);
     if (!region) return [];
-    return offers.filter((offer) => offerMatchesRegion(offer, region));
+    return offers.filter((offer) => isComparableRegionalOffer(offer) && offerMatchesRegion(offer, region));
   };
   function getRegionCoverage(slug: string) {
     const regionOffers = getOffersForRegion(slug);
@@ -555,7 +557,7 @@ export function createPricingData(dataset: PricingDataset) {
   // Public health metadata only. No process configuration or credentials are exposed.
   const pricingDatasetStatus = {
     schemaVersion: 1,
-    comparisonScope: "regional-gpu-hour",
+    comparisonScope: "market-gpu-hour",
     generatedAt: dataset.generatedAt,
     collector: dataset.collector ?? null,
     libraryCoverage: { totals: dataset.coverage?.totals ?? null },
@@ -564,6 +566,8 @@ export function createPricingData(dataset: PricingDataset) {
       offers: collectedOffers.length,
       totalCollectedOffers: collectedOffers.length,
       comparableOffers: offers.length,
+      regionalOffers: offers.filter(isComparableRegionalOffer).length,
+      catalogOffers: offers.filter(isCatalogPriceOffer).length,
       excludedFromComparison: collectedOffers.length - offers.length,
       officialOffers: collectedOffers.length,
       referenceOffers: 0,

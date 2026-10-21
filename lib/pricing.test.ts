@@ -16,6 +16,10 @@ test("eligibility badges and filtering retain regional and membership restrictio
   assert.equal(hasEligibilityConditions(member), true);
   assert.equal(hasEligibilityConditions(quote()), false);
   assert.equal(isComparableUsdHourly(member), false);
+  const compShare = quote({ providerSlug: "ucloud", pricingTier: "ordinary", membershipRequired: false,
+    conditions: ["API 折后价资格未核实，未当作会员价或比较价格。"] });
+  assert.equal(hasEligibilityConditions(compShare), false);
+  assert.equal(isComparableUsdHourly(compShare), true);
 });
 
 test("collapsed price configurations disclose the cloud tier alongside published hardware", () => {

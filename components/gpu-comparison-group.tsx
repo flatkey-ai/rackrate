@@ -4,6 +4,7 @@ import type { Gpu, Offer, Provider } from "@/lib/data";
 import type { OfferComparisonGroup, OfferComparisonBucket } from "@/lib/offer-comparison";
 import { offerAudience, hasAdditionalEligibility, summarizeComparisonGroup } from "@/lib/offer-comparison";
 import { offerLocationLabel } from "@/lib/region-matching";
+import { isCatalogPriceOffer, offerProviderLabel } from "@/lib/offer-geography.mjs";
 import { availabilityLabel, billingUnitLabel, cloudTierLabel, formatOfferPrice, isAccountSpecificPrice, priceBasisLabel, summaryConfigurationLabel } from "@/lib/pricing";
 import { OfferDetails } from "./offer-details";
 import styles from "./price-explorer.module.css";
@@ -50,13 +51,13 @@ function BucketHeading({ bucket }: { bucket: OfferComparisonBucket }) {
 }
 
 function shortLocation(offer: Offer) {
-  return offerLocationLabel(offer, 2);
+  return isCatalogPriceOffer(offer) ? "Catalog · region not specified" : offerLocationLabel(offer, 2);
 }
 
 function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audience: "regular" | "member"; providers: Map<string, Provider> }) {
   const offer = offers[0];
   if (!offer) return <div className={styles.summaryEmptyRate}>No {audience} price</div>;
-  const platforms = [...new Set(offers.map((entry) => providers.get(entry.providerSlug)?.name ?? entry.providerSlug))];
+  const platforms = [...new Set(offers.map((entry) => offerProviderLabel(entry, providers.get(entry.providerSlug)?.name ?? entry.providerSlug)))];
   const configurations = [...new Set(offers.map(summaryConfigurationLabel))];
   const locations = [...new Set(offers.map(shortLocation))];
   const tiers = [...new Set(offers.map(cloudTierLabel).filter(Boolean))];
@@ -93,7 +94,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
           const open = expanded === offer.id;
           const low = bucket.lowestRegularIds.includes(offer.id);
           return <Fragment key={offer.id}><tr className={`${low ? styles.lowestRow : ""} ${open ? styles.selectedRow : ""}`}>
-            <td><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{provider.name}</Link>{configuration(offer) && <div className={styles.modelMeta}>{configuration(offer)}</div>}<OfferTerms offer={offer} /></td>
+            <td><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{offerProviderLabel(offer, provider.name)}</Link>{configuration(offer) && <div className={styles.modelMeta}>{configuration(offer)}</div>}<OfferTerms offer={offer} /></td>
             <td><span className={styles.location}>{shortLocation(offer)}</span>{offer.zones.length > 0 && <small className={styles.zone}>{offer.zones[0]}{offer.zones.length > 1 ? ` +${offer.zones.length - 1} zones` : ""}</small>}</td>
             <td><OfferPrice offer={offer} bucket={bucket} /></td>
             <td><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpu.shortName} on ${provider.name} details`} aria-expanded={open} aria-controls={open ? `${id}-desktop-${offer.id}` : undefined} onClick={() => toggle(offer.id)}>Details<Chevron open={open} /></button></td>
@@ -105,7 +106,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
         const open = expanded === offer.id;
         const low = bucket.lowestRegularIds.includes(offer.id);
         return <article key={offer.id} className={`${styles.offerCard} ${low ? styles.lowestCard : ""}`}>
-          <div className={styles.cardTop}><div><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{provider.name}</Link></div><OfferPrice offer={offer} bucket={bucket} /></div>
+          <div className={styles.cardTop}><div><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{offerProviderLabel(offer, provider.name)}</Link></div><OfferPrice offer={offer} bucket={bucket} /></div>
           {configuration(offer) && <div className={styles.cardConfiguration}>{configuration(offer)}</div>}<OfferTerms offer={offer} />
           <div className={styles.cardBottom}><span className={styles.location}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8c0 4-6 9-6 9S4 12 4 8a6 6 0 1 1 12 0Z" /><circle cx="10" cy="8" r="2" /></svg><span>{shortLocation(offer)}{offer.zones.length > 0 && <small>{offer.zones[0]}{offer.zones.length > 1 ? ` +${offer.zones.length - 1} zones` : ""}</small>}</span></span><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpu.shortName} on ${provider.name} details`} aria-expanded={open} aria-controls={open ? `${id}-mobile-${offer.id}` : undefined} onClick={() => toggle(offer.id)}>Details<Chevron open={open} /></button></div>
           {open && <div className={styles.details} id={`${id}-mobile-${offer.id}`}><OfferDetails offer={offer} /></div>}

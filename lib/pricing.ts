@@ -62,7 +62,10 @@ export function summaryConfigurationLabel(offer: Offer): string {
 // USD-normalized comparisons never mix billing periods, offline/reference listings,
 // starting prices, component-only charges, member rates or purchasing models.
 export function hasEligibilityConditions(offer: Offer) {
-  return isAccountSpecificPrice(offer) || offer.membershipRequired === true || offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
+  const member = offer.membershipRequired === true || offer.pricingTier === "member"
+    || (offer.membershipRequired !== false && !["ordinary", "regular"].includes(offer.pricingTier ?? "")
+      && offer.conditions.some((condition) => /member|membership|会员/i.test(condition)));
+  return isAccountSpecificPrice(offer) || member || offer.conditions.some((condition) => /reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
 }
 export function isComparableUsdHourly(offer: Offer): offer is Offer & { pricePerGpuHour: number } {
   return offer.billingUnit === "GPU-hour"

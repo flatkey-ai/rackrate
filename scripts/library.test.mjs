@@ -394,11 +394,11 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
   assert.equal(files.get("/example/data/public-prices.csv.tmp"), bilingualFixtureCsv);
-  assert.ok(files.get("/example/data/prices.csv.tmp").startsWith("\uFEFFGPU型号/规格,平台,国家/地区,"));
+  assert.ok(files.get("/example/data/prices.csv.tmp").startsWith("\uFEFFGPU型号/规格,平台,报价适用范围,"));
   assert.ok(files.get("/example/data/prices.csv.tmp").endsWith("\r\n"));
   assert.ok(files.get("/example/data/prices.csv.tmp").includes("us-central1"));
   assert.ok(!files.get("/example/data/prices.csv.tmp").includes("未公布"));
-  assert.equal(buildCompactPriceTable(files.get("/example/data/offers.json.tmp")).rows.length, 1);
+  assert.equal(buildCompactPriceTable(files.get("/example/data/offers.json.tmp")).rows.length, REQUIRED_PROVIDERS.length);
   assert.ok(publications.some(([, to]) => to === "/example/data/public-prices.csv"));
   assert.ok(publications.some(([, to]) => to === "/example/data/prices.csv"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);

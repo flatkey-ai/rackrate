@@ -148,9 +148,9 @@ test("strict data must exactly match the offers artifact and contain eligible ro
   assert.equal(due(complete, { ...artifacts, dataset: changed }), true);
   const empty = { ...artifacts.dataset, offers: [] };
   assert.equal(due(complete, { ...artifacts, dataset: empty, compactCsv: compactPricesToCsv(empty) }), true);
-  const coverageOnly = { ...artifacts.dataset, offers: artifacts.dataset.offers.map((offer) =>
-    ({ ...offer, priceScope: "platform_coverage" })) };
-  assert.equal(due(complete, { ...artifacts, dataset: coverageOnly, compactCsv: compactPricesToCsv(coverageOnly) }), true);
+  const monthlyOnly = { ...artifacts.dataset, offers: artifacts.dataset.offers.map((offer) =>
+    ({ ...offer, billingUnit: "GPU-month", billingMode: "monthly" })) };
+  assert.equal(due(complete, { ...artifacts, dataset: monthlyOnly, compactCsv: compactPricesToCsv(monthlyOnly) }), true);
 });
 
 test("every raw CSV record must belong to the offers batch even with quoted multiline notes", () => {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { comparableCountryCodes, isComparableRegionalOffer } from "../lib/offer-geography.mjs";
+import { comparableCountryCodes, isComparableRegionalOffer, isMarketHourlyOffer, isCatalogPriceOffer, matchesHourlyPriceScope, offerProviderLabel } from "../lib/offer-geography.mjs";
 
 const quote = (extra = {}) => ({
   id: "regional", dataStatus: "official-page", billingUnit: "GPU-hour", billingMode: "on_demand", quoteStatus: "quoted",
@@ -50,4 +50,44 @@ test("explicit unavailable, offline, ended and upcoming states cannot become cur
     assert.equal(isComparableRegionalOffer(quote({ sourceAvailability: "unknown", availability: state })), false);
   }
   assert.equal(isComparableRegionalOffer(quote({ sourceAvailability: "unknown", availability: "unknown", regionPriceVerified: undefined })), true);
+});
+
+test("market admits real hourly catalogs without assigning coverage, capacity or a country to the price", () => {
+  for (const extra of [
+    { priceScope: "unlocated_catalog", regions: [], computeCountries: [], countryCode: "" },
+    { priceScope: "platform_coverage", coverageRegions: ["eu-north1"], coverageCountries: ["FI"] },
+    { priceScope: "unlocated_catalog", capacityRegions: ["eu-north1"] },
+    { productType: "gpu_container", priceScope: "unlocated_catalog" },
+  ]) {
+    const offer = quote(extra), before = JSON.stringify(offer);
+    assert.equal(isMarketHourlyOffer(offer), true);
+    assert.equal(isComparableRegionalOffer(offer), false);
+    assert.equal(isCatalogPriceOffer(offer), true);
+    assert.equal(matchesHourlyPriceScope(offer, "all"), true);
+    assert.equal(matchesHourlyPriceScope(offer, "catalog"), true);
+    assert.equal(matchesHourlyPriceScope(offer, "regional"), false);
+    assert.equal(JSON.stringify(offer), before);
+  }
+  assert.equal(matchesHourlyPriceScope(quote(), "regional"), true);
+  assert.equal(matchesHourlyPriceScope(quote(), "catalog"), false);
+  assert.equal(matchesHourlyPriceScope(quote(), "other"), false);
+});
+
+test("market and regional projections share monetary, product and hourly eligibility gates", () => {
+  for (const extra of [
+    { billingUnit: "GPU-month" }, { billingMode: "yearly" }, { billingMode: "monthly" },
+    { quoteStatus: "starting_at" }, { quoteStatus: "contact_sales" }, { sourceAmount: null },
+    { priceBasis: "gpu_component" }, { priceBasis: "unknown" }, { productType: "cpu_instance" },
+    { sourceAvailability: "offline" }, { sourceAmount: "2.00" }, { priceUsdPerGpuUnit: null },
+  ]) assert.equal(isMarketHourlyOffer(quote(extra)), false, JSON.stringify(extra));
+  for (const extra of [{ membershipRequired: true }, { billingMode: "spot" }, { sourceAmount: "0", pricePerGpuUnit: 0, priceUsdPerGpuUnit: 0 }]) {
+    assert.equal(isMarketHourlyOffer(quote(extra)), true);
+  }
+});
+
+test("CompShare product line is explicit without renaming ordinary UCloud UHost quotes", () => {
+  for (const extra of [{ productLine: "优云智算 / CompShare" }, { pricingProductScope: "ucloud_compshare" }, { pricingProductScope: ["ucloud_compshare"] }]) {
+    assert.equal(offerProviderLabel(quote({ providerSlug: "ucloud", ...extra }), "UCloud"), "UCloud · CompShare");
+  }
+  assert.equal(offerProviderLabel(quote({ providerSlug: "ucloud", productLine: "UHost" }), "UCloud"), "UCloud");
 });

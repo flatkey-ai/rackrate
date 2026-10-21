@@ -64,7 +64,7 @@ export default async function GpusIndexPage() {
           <div>
             <span className="eyebrow">GPU rental price index</span>
             <h1>Compare GPU prices by model.</h1>
-            <p>Compare accelerators with numeric prices per GPU-hour tied to a published country and region. Cards show a regular on-demand rate when available, otherwise a regular Spot rate explicitly labeled Spot. Each purchase mode keeps its own price comparison. Dated ECB conversions are used where needed. Offline, starting, member and GPU-component rates stay out of card benchmarks. Monthly packages and unverified price locations stay out of the comparison.</p>
+            <p>Compare hourly GPU catalog and regional prices. Cards prefer a regular on-demand rate, otherwise a regular Spot rate explicitly labeled Spot. Catalog prices do not establish a worldwide rate. Dated ECB conversions are used where needed. Offline, starting, member and GPU-component rates stay out of card benchmarks; monthly packages remain in the source audit.</p>
           </div>
           <div className="directory-summary">
             <div><span>Models tracked</span><strong>{gpus.length}</strong></div>

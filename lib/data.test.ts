@@ -101,7 +101,7 @@ test("monthly source records remain in audit/status and never reach any hourly c
   assert.deepEqual(data.getOffersForRegion("europe"), []);
 });
 
-test("all website directories and stats project only complete regional numeric hourly quotes", () => {
+test("website market includes hourly catalogs while regional directories keep verified price locations", () => {
   const valid = quote();
   const excluded = [
     quote({ id: "unlocated", providerSlug: "lambda", gpuSlug: "nvidia-a100", priceScope: "unlocated_catalog" }),
@@ -110,14 +110,23 @@ test("all website directories and stats project only complete regional numeric h
     quote({ id: "region-unverified", regionPriceVerified: false }), quote({ id: "from", quoteStatus: "starting_at" }),
     quote({ id: "component", priceBasis: "gpu_component" }),
   ];
-  const input = dataset({ offers: [valid, ...excluded] }), before = JSON.stringify(input), current = createPricingData(input);
-  assert.deepEqual(current.offers.map((offer) => offer.id), [valid.id]);
-  assert.deepEqual(current.providers.map((provider) => provider.slug), ["nebius"]);
-  assert.deepEqual(current.gpus.map((gpu) => gpu.slug), ["nvidia-h100"]);
+  const input = dataset({ offers: [valid, ...excluded], generatedCatalog: {
+    gpus: [...dataset().generatedCatalog!.gpus, { slug: "nvidia-a100", name: "A100", shortName: "A100" }],
+    providers: [...dataset().generatedCatalog!.providers,
+      { slug: "lambda", name: "Lambda", website: "https://lambda.ai" },
+      { slug: "crusoe", name: "Crusoe", website: "https://crusoe.ai" }],
+  } }), before = JSON.stringify(input), current = createPricingData(input);
+  assert.deepEqual(current.offers.map((offer) => offer.id), [valid.id, "unlocated", "coverage", "country-missing", "region-unverified"]);
+  assert.deepEqual(current.providers.map((provider) => provider.slug).sort(), ["crusoe", "lambda", "nebius"]);
+  assert.deepEqual(current.gpus.map((gpu) => gpu.slug), ["nvidia-h100", "nvidia-a100"]);
   assert.equal(current.collectedOffers.length, 7);
   assert.equal(current.pricingDatasetStatus.counts.offers, 7);
-  assert.equal(current.pricingDatasetStatus.counts.comparableOffers, 1);
-  assert.deepEqual(current.pricingDatasetStatus.comparableProviderCounts, { nebius: 1 });
+  assert.equal(current.pricingDatasetStatus.counts.comparableOffers, 5);
+  assert.equal(current.pricingDatasetStatus.counts.regionalOffers, 1);
+  assert.equal(current.pricingDatasetStatus.counts.catalogOffers, 3);
+  assert.equal(current.pricingDatasetStatus.comparisonScope, "market-gpu-hour");
+  assert.deepEqual(current.pricingDatasetStatus.comparableProviderCounts, { crusoe: 1, lambda: 1, nebius: 3 });
   assert.deepEqual(current.pricingDatasetStatus.providerCounts, { crusoe: 1, lambda: 1, nebius: 5 });
+  assert.deepEqual(current.getOffersForRegion("europe").map((offer) => offer.id), [valid.id]);
   assert.equal(JSON.stringify(input), before);
 });

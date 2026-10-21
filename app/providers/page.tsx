@@ -45,7 +45,7 @@ export default async function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>These providers have numeric per-GPU hourly quotes tied to a published country and region. Provider and offer counts use this comparable set; the complete collection is retained in the source audit. Member and Spot conditions remain attached to each quote. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below. Flatkey has a separate commercial profile and quote links.</p>
+          <p>These providers have numeric GPU-hour catalog or regional prices. Catalog prices leave their applicable region unspecified; country and region filters use verified regional quotes. The complete collection remains in the source audit. Member and Spot conditions stay attached to each quote. Summary benchmarks use eligible hourly on-demand prices and dated ECB rates. Flatkey has a separate commercial profile and quote links.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {

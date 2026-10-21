@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildCompactPriceTable, compactPricesToCsv, COMPACT_CSV_HEADERS } from "./lib/compact-csv.mjs";
-import { isComparableRegionalOffer } from "../lib/offer-geography.mjs";
+import { isComparableRegionalOffer, isMarketHourlyOffer } from "../lib/offer-geography.mjs";
 
 const quote = (overrides = {}) => ({
   id: "one", providerSlug: "example", gpuSlug: "nvidia-h100", gpuModel: "H100", gpuVariant: "SXM", vramGb: 80,
@@ -45,7 +45,7 @@ test("ten-column CSV uses the strict regional-hourly rule and leaves the complet
     { priceScope: "unlocated_catalog" }, { computeCountries: [], countryCode: "" }, { regions: [] }, { regionPriceVerified: false },
     { priceBasis: "gpu_component" }, { instanceBillingUnit: "instance-month" },
   ].map((extra, index) => quote({ id: `excluded-${index}`, ...extra })));
-  const input = dataset(offers), before = JSON.stringify(input), csv = compactPricesToCsv(input), rows = parse(csv);
+  const input = dataset(offers), before = JSON.stringify(input), csv = compactPricesToCsv(input, { scope: "regional" }), rows = parse(csv);
   assert.ok(csv.startsWith("\uFEFF") && csv.endsWith("\r\n"));
   assert.deepEqual(rows[0], COMPACT_CSV_HEADERS);
   assert.equal(rows.length, 4);
@@ -80,11 +80,12 @@ test("FX may use the input snapshot and missing conversion provenance fails expl
   assert.throws(() => tableRow(quote({ sourceCurrency: "CNY", usdSourceAmount: null })), /rate missing/);
 });
 
-test("member Spot cloud conditions, dynamic effective time and provider snapshot remain explicit", () => {
+test("member Spot cloud restrictions and effective time remain concise while snapshots stay in source data", () => {
   const row = tableRow(quote({ membershipRequired: true, pricingTier: "member", cloudTier: "community", billingMode: "spot", rentalType: "Spot",
     accountScope: "authenticated_contract", taxScope: "included", effectiveFrom: "2026-10-21T08:00:00Z", sourceSnapshotAt: "2026-10-21T08:02:03Z",
     conditions: ["ILS prices apply to companies from Israel.", "Storage is charged separately."], sourceConditions: { account_type: "company" } }));
-  for (const label of ["会员价", "Spot竞价（可中断）", "动态价", "生效2026-10-21 16:00:00（北京时间）", "API最早采样2026-10-21 16:02:03（北京时间）", "Community云", "authenticated_contract", "含税", "companies from Israel", "Storage is charged separately"]) assert.ok(row[6].includes(label));
+  for (const label of ["会员价", "Spot（可中断）", "动态价", "生效2026-10-21 16:00:00（北京时间）", "Community云", "authenticated_contract", "含税", "ILS价适用于以色列公司", "存储另计"]) assert.ok(row[6].includes(label));
+  assert.doesNotMatch(row[6], /API最早采样|Storage is charged separately/);
 });
 
 test("Beijing observation timestamps cross dates correctly and require an explicit timezone", () => {
@@ -108,9 +109,34 @@ test("CSV quoting round-trips multiline values and prevents spreadsheet formulas
 
 test("bundled-data CSV agrees exactly with the website eligibility rule", async () => {
   const input = JSON.parse(await readFile(new URL("../data/offers.json", import.meta.url), "utf8"));
-  const eligible = input.offers.filter(isComparableRegionalOffer), { rows } = buildCompactPriceTable(input);
+  const eligible = input.offers.filter(isMarketHourlyOffer), { rows } = buildCompactPriceTable(input);
   assert.equal(rows.length, eligible.length);
   assert.ok(rows.length > 0);
-  assert.ok(rows.every((row) => row.length === 10 && row[5] === "每小时" && !/未核实|平台覆盖|国家待核实/.test(row[2]) && /^\d/.test(row[3])));
+  assert.ok(rows.every((row) => row.length === 10 && row[5] === "每小时" && /^\d/.test(row[3])));
   assert.equal(rows.filter((row) => row[7] === "已下线").length, eligible.filter((offer) => offer.sourceAvailability === "offline").length);
+});
+
+test("default market CSV retains catalogs and actual regional quotes with the same website gate", () => {
+  const offers = [quote(), quote({ id: "catalog", priceScope: "unlocated_catalog", regions: [], computeCountries: [], sourceCurrency: "CNY", usdSourceAmount: "0.1845" }),
+    quote({ id: "coverage", priceScope: "platform_coverage", coverageRegions: ["eu-north1"] }),
+    quote({ id: "monthly", billingUnit: "GPU-month" }), quote({ id: "floor", quoteStatus: "starting_at" })];
+  const input = dataset(offers, { fx: rates }), before = JSON.stringify(input);
+  const market = buildCompactPriceTable(input), regional = buildCompactPriceTable(input, { scope: "regional" });
+  assert.equal(market.rows.length, offers.filter(isMarketHourlyOffer).length);
+  assert.equal(regional.rows.length, offers.filter(isComparableRegionalOffer).length);
+  assert.equal(market.rows.filter((row) => /适用地区未标明/.test(row[2])).length, 2);
+  assert.ok(market.rows.filter((row) => /适用地区未标明/.test(row[2])).every((row) => /不代表全球统一价/.test(row[2]) && !/中国|芬兰|CN|FI|eu-north1/.test(row[2])));
+  assert.equal(JSON.stringify(input), before);
+  assert.throws(() => buildCompactPriceTable(input, { scope: "other" }), /scope/);
+});
+
+test("CompShare hourly quotes identify their product line and ordinary discount is not membership", () => {
+  const row = tableRow(quote({ providerSlug: "ucloud", productLine: "CompShare", pricingProductScope: "ucloud_compshare",
+    sourceCurrency: "CNY", sourceAmount: "20", pricePerGpuUnit: 20, priceUsdPerGpuUnit: 3, usdSourceAmount: "3",
+    gpuCount: 4, priceBasis: "instance_total_allocated", instancePrice: 80, instanceSourceAmount: "80", instanceCurrency: "CNY", instanceBillingUnit: "instance-hour",
+  }), { fx: rates });
+  assert.equal(row[1], "UCloud · CompShare");
+  assert.match(row[6], /普通价/);
+  assert.doesNotMatch(row[6], /会员价/);
+  assert.match(row[4], /80 CNY\/整机\/小时/);
 });

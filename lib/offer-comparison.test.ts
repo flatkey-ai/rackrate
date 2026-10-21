@@ -34,9 +34,9 @@ test("Spot-only GPU directory cards return an actual regular Spot quote with its
   assert.equal(selected?.sourceAmount, "1.6");
 });
 
-test("directory Spot fallback cannot promote unlocated, unavailable, monthly, starting, member or conditional rates", () => {
+test("directory Spot fallback cannot promote unavailable, monthly, starting, component, member or conditional rates", () => {
   const excluded = [
-    regional("coverage", "Spot", 0.1, { priceScope: "platform_coverage" }),
+    regional("component", "Spot", 0.1, { priceBasis: "gpu_component" }),
     regional("offline", "Spot", 0.1, { availability: "unavailable" }),
     regional("monthly", "Monthly", 0.1, { billingUnit: "GPU-month" }),
     regional("starting", "Spot", 0.1, { quoteStatus: "starting_at" }),
@@ -45,6 +45,15 @@ test("directory Spot fallback cannot promote unlocated, unavailable, monthly, st
   ];
   assert.equal(directoryHeadlineOffer(excluded), undefined);
   assert.equal(directoryHeadlineOffer([...excluded, regional("valid-spot", "Spot", 2)])?.id, "valid-spot");
+});
+
+test("directory cards can use complete catalog prices without attaching their coverage to the price", () => {
+  const catalog = regional("catalog", "On-demand", 2, { priceScope: "platform_coverage", regionPriceVerified: false,
+    regions: [], computeCountries: [], countryCode: "", coverageRegions: ["eu-north1"] });
+  const before = JSON.stringify(catalog);
+  assert.equal(directoryHeadlineOffer([catalog, regional("spot", "Spot", 0.1)])?.id, "catalog");
+  assert.deepEqual(matchesPriceRegionFilter(catalog, "eu-north1"), false);
+  assert.equal(JSON.stringify(catalog), before);
 });
 
 test("canonical GPU grouping puts platforms together and sorts compatible prices without mutating input", () => {
@@ -121,6 +130,10 @@ test("membership is explicit, ordinary source caveats do not become member or co
   assert.equal(offerAudience(quote({ conditions: ["Availability, account eligibility and checkout totals were not verified."] })), "regular");
   assert.equal(hasAdditionalEligibility(quote({ conditions: ["ILS prices apply to companies from Israel"] })), true);
   assert.equal(hasAdditionalEligibility(quote({ conditions: ["No minimum commitment"] })), false);
+  const compShare = quote({ providerSlug: "ucloud", pricingTier: "ordinary", membershipRequired: false,
+    conditions: ["API 折后价资格未核实，未当作会员价或比较价格。"] });
+  assert.equal(isMemberPrice(compShare), false);
+  assert.equal(offerAudience(compShare), "regular");
 });
 
 test("account-specific quote amounts remain inspectable but cannot claim a public regular minimum", () => {

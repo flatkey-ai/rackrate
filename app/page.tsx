@@ -26,7 +26,7 @@ export default async function Home() {
           <div className="hero-copy">
             <div className="hero-kicker"><span>{providers.length} platforms</span>Official pricing sources</div>
             <h1>Compare GPU<br /><em>rental prices.</em></h1>
-            <p>Compare numeric prices per GPU-hour, each tied to a published country and region. Check configuration and purchase terms.</p>
+            <p>Compare hourly GPU catalog and regional prices. Check configuration, price scope and purchase terms.</p>
             <div className="hero-actions">
               <Link className="button button-primary" href="#prices">Compare prices <span>↓</span></Link>
               <Link className="button button-secondary" href="/methodology">How we collect prices <span>→</span></Link>
@@ -46,7 +46,7 @@ export default async function Home() {
             <div className="terminal-stats">
               <div><span>Platforms</span><strong>{providers.length}</strong></div>
               <div><span>GPU models</span><strong>{gpus.length}</strong></div>
-              <div><span>Regional hourly quotes</span><strong>{offers.length}</strong></div>
+              <div><span>Hourly prices</span><strong>{offers.length}</strong></div>
             </div>
           </div>
         </div>
@@ -86,7 +86,7 @@ export default async function Home() {
           <div className="home-provider-directory">
             {providers.map((provider) => (
               <Link href={`/providers/${provider.slug}`} className="home-provider-link" key={provider.slug}>
-                <span className="provider-name">{provider.name}<small>{getOffersForProvider(provider.slug).length} regional hourly quotes</small></span>
+                <span className="provider-name">{provider.name}<small>{getOffersForProvider(provider.slug).length} hourly prices</small></span>
                 <span className="provider-arrow">↗</span>
               </Link>
             ))}

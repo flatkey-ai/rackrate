@@ -1,8 +1,8 @@
 import { convertAmountToUsd } from "./fx.mjs";
-import { comparableCountryCodes, isComparableRegionalOffer } from "../../lib/offer-geography.mjs";
+import { comparableCountryCodes, isComparableRegionalOffer, isMarketHourlyOffer, offerProviderLabel } from "../../lib/offer-geography.mjs";
 
 export const COMPACT_CSV_HEADERS = Object.freeze([
-  "GPU型号/规格", "平台", "国家/地区", "美元参考价（USD/卡/小时）", "官网报价（原币）",
+  "GPU型号/规格", "平台", "报价适用范围", "美元参考价（USD/卡/小时）", "官网报价（原币）",
   "计费周期", "价格类型/条件", "可用状态", "官网链接", "采集时间（北京时间）",
 ]);
 
@@ -14,7 +14,6 @@ const clock = new Intl.DateTimeFormat("sv-SE", {
   hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
 });
 const unique = (values) => [...new Set(values.filter((value) => typeof value === "string" && value.trim()))];
-const countryCodes = (values) => unique(values).filter((code) => /^[A-Z]{2}$/.test(code) && !["EU", "GL"].includes(code));
 const countryLabel = (code) => `${countryNames.of(code) ?? code} ${code}`;
 
 function decimal(value, label) {
@@ -40,6 +39,7 @@ function configuration(offer, catalog) {
   const storage = resources.storage;
   if (storage?.amount != null) parts.push(`${storage.amount}${storage.unit ?? ""}${storage.type ? ` ${storage.type}` : ""}盘`);
   else if (resources.disk_gb != null) parts.push(`${resources.disk_gb}GB盘`);
+  else if (resources.system_disk_gb != null) parts.push(`${resources.system_disk_gb}GB系统盘`);
   if (resources.bandwidth_mbps != null) parts.push(`${resources.bandwidth_mbps}Mbps`);
   return parts.filter((value) => value != null && value !== "").join(" / ");
 }
@@ -48,18 +48,14 @@ function geography(offer) {
   const coverage = offer.priceScope === "platform_coverage" || (!offer.priceScope
     && offer.conditions?.some((condition) => /not a region-specific price quote/i.test(condition)));
   if (coverage) {
-    const footprint = unique([
-      ...countryCodes(offer.coverageCountries ?? []).map(countryLabel),
-      ...(offer.coverageRegions ?? offer.regions ?? []),
-    ]);
-    return `价格适用地区未核实；平台覆盖：${footprint.join(" / ") || "未公布"}（非地区报价）`;
+    return "公开目录报价；适用地区未标明（不代表全球统一价）";
   }
   // The export makes no country inference from currency, headquarters, capacity
   // inventory or a generic catalogue. Unverified scopes stay unverified.
-  if (!regionalScopes.has(offer.priceScope)) return "价格适用地区未核实";
+  if (!regionalScopes.has(offer.priceScope) || offer.regionPriceVerified === false) return "目录报价；适用地区未标明（不代表全球统一价）";
   const countries = comparableCountryCodes(offer);
   const regions = unique([...(offer.regions ?? []), ...(offer.zones ?? [])]);
-  if (!countries.length && !regions.length) return "价格适用地区未核实";
+  if (!regions.length) return "目录报价；适用地区未标明（不代表全球统一价）";
   return unique([countries.length ? countries.map(countryLabel).join("、") : "国家待核实", ...regions]).join(" / ");
 }
 
@@ -94,26 +90,48 @@ function sourceValue(value) {
   return String(value);
 }
 
+function billingRestrictions(offer) {
+  const summaries = [
+    ["usd billing applies except to companies from israel, where ils billing applies", "以色列公司按ILS计费，其余客户按USD计费"],
+    ["usd prices apply to customers except companies from israel", "USD价不适用于以色列公司"],
+    ["ils prices apply to companies from israel", "ILS价适用于以色列公司"],
+    ["as often as every 15 minutes", "Spot价格可每15分钟变动"],
+    ["private-region footnote", "私有地区需访问资格"],
+    ["storage is charged separately", "存储另计"],
+    ["additional outbound transfer can incur charges", "额外出站流量可能收费"],
+    ["prices may change daily", "Spot公测，价格可每日变动"],
+    ["managed disks, networking and other services are not included", "托管磁盘、网络及其他服务另计"],
+    ["bandwidth, traffic and other services not included", "带宽、流量及请求外服务可能另计"],
+    ["tax, network traffic, services outside this request", "网络流量及请求外服务费用未核实"],
+    ["separately billed storage or networking", "存储与网络可能另计"],
+  ];
+  return unique((offer.conditions ?? []).flatMap((condition) => {
+    const matched = summaries.filter(([fragment]) => condition.toLowerCase().includes(fragment)).map(([, summary]) => summary);
+    if (matched.length) return matched;
+    return condition.split(/(?<=[.!?。])\s+/).filter((sentence) => {
+      if (offer.membershipRequired && /membership eligibility/i.test(sentence)) return false;
+      return /charged separately|billed separately|\bminimum\b.*\b(rental|commitment|payment)\b|\b(additional|egress|outbound)\b.*\b(fee\w*|charge\w*)\b|\bonly\b.*\b(customers?|compan\w*)\b|另计|最低承诺|仅新客户|限购/i.test(sentence);
+    });
+  }));
+}
+
 function conditions(offer, datasetFx) {
   const labels = [];
   const member = offer.membershipRequired === true || offer.pricingTier === "member";
-  labels.push(member ? "会员价（会员资格未核验）" : "普通价");
+  labels.push(member ? "会员价" : "普通价");
   const mode = offer.billingMode ?? offer.rentalType;
-  labels.push(({ on_demand: "按需", "On-demand": "按需", spot: "Spot竞价（可中断）", Spot: "Spot竞价（可中断）", monthly: "月包", Monthly: "月包", reserved: "预留", Reserved: "预留" })[mode] ?? mode);
+  labels.push(({ on_demand: "按需", "On-demand": "按需", spot: "Spot（可中断）", Spot: "Spot（可中断）", monthly: "月包", Monthly: "月包", reserved: "预留", Reserved: "预留" })[mode] ?? mode);
   if (["spot", "Spot"].includes(mode)) {
     labels.push("动态价");
-    if (offer.effectiveFrom) labels.push(`生效${observedAt(offer.effectiveFrom)}（北京时间）`);
-    if (offer.sourceSnapshotAt) labels.push(`API最早采样${observedAt(offer.sourceSnapshotAt)}（北京时间）`);
   }
-  if (offer.pricingTier && !["member", "regular"].includes(offer.pricingTier)) labels.push(`价格层级：${offer.pricingTier}`);
+  if (offer.pricingTier && !["member", "regular", "ordinary"].includes(offer.pricingTier)) labels.push(`价格层级：${offer.pricingTier}`);
   if (offer.cloudTier) labels.push(({ secure: "Secure云", community: "Community云" })[offer.cloudTier] ?? `云层级：${offer.cloudTier}`);
   if (offer.priceBasis === "gpu_component") labels.push("仅GPU组件价，整机另计");
   if (offer.priceBasis === "instance_total_allocated") labels.push(`整机总价按${offer.gpuCount ?? "所含"}卡分摊`);
   if (offer.quoteStatus === "starting_at") labels.push("起步价");
   if (offer.quoteStatus === "contact_sales") labels.push("联系销售询价");
   const account = offer.accountScope;
-  if (account && !["public_catalog", "unspecified"].includes(account)) labels.push(`账户适用范围：${account}`);
-  labels.push("账户资格及最终结算未核验");
+  if (account && !["public_catalog", "unspecified"].includes(account)) labels.push(`账户适用范围：${({ anonymous_public_quote: "公开询价", authenticated_catalog: "认证账号目录", account_quote: "账号询价", account_contract_quote: "合同价" })[account] ?? account}`);
   labels.push(({ included: "含税", excluded: "不含税", unspecified: "税务待核实" })[offer.taxScope ?? "unspecified"] ?? `税务口径：${offer.taxScope}`);
   const promotion = offer.promotion;
   if (promotion) {
@@ -123,12 +141,20 @@ function conditions(offer, datasetFx) {
     if (promotion.purchase_limit != null) labels.push(`限购${promotion.purchase_limit}台`);
   }
   if (offer.minimumCommitment != null) labels.push(`最低承诺：${sourceValue(offer.minimumCommitment)}`);
-  if (offer.sourceConditions) labels.push(`官网条件：${sourceValue(offer.sourceConditions)}`);
-  // Keep published account, tax, regional eligibility and extra-charge caveats
-  // rather than inventing provider-specific conditions in the application.
-  for (const condition of offer.conditions ?? []) {
-    if (/tax|vat|gst|israel|account|eligib|storage|disk|network|egress|transfer|windows|commitment|minimum|new.customer|promotion|purchase limit|reclaim|interrupt|charged separately|另计|税|资格|限购/i.test(condition)) labels.push(condition);
+  if (offer.providerSlug === "ucloud" && offer.pricingProductScope === "ucloud_compshare") {
+    labels.push("官网普通原价；未采用资格不明的折后价", "含请求内计算与磁盘费用；网络、共享存储及付费镜像另计", "按请求地区询价；响应未回显地区");
+  } else if (Array.isArray(offer.sourceConditions)) {
+    if (offer.sourceConditions.length) labels.push(`官网条件：${sourceValue(offer.sourceConditions)}`);
+  } else if (offer.sourceConditions) {
+    const terms = Object.fromEntries(Object.entries(offer.sourceConditions).filter(([key, value]) =>
+      !key.endsWith("_url") && !["capacity_type", "cloud_type", "rate_type", "purchase_option", "aggregation_unit"].includes(key)
+      && value != null && (!Array.isArray(value) || value.length)));
+    if (Object.keys(terms).length) labels.push(`官网条件：${sourceValue(terms)}`);
   }
+  if (offer.selectedConfiguration) labels.push(`选定配置：${sourceValue(offer.selectedConfiguration)}`);
+  if (offer.effectiveFrom) labels.push(`生效${observedAt(offer.effectiveFrom)}（北京时间）`);
+  if (offer.effectiveUntil) labels.push(`截止${observedAt(offer.effectiveUntil)}（北京时间）`);
+  labels.push(...billingRestrictions(offer));
   if (offer.sourceCurrency !== "USD" && offer.sourceAmount != null) {
     const fx = offer.fx ?? datasetFx;
     const rate = fx?.rateToUsdDecimal ?? fx?.ratesToUsd?.[offer.sourceCurrency];
@@ -148,14 +174,15 @@ function observedAt(value) {
   return clock.format(new Date(value));
 }
 
-/** Application projection only: eligible regional hourly quotes, exact decimal strings,
+/** Application projection only: actual market hourly quotes, exact decimal strings,
  * native instance/per-card basis, source period, and provenance in ten columns.
  * The collector's source CSV remains a separate, unmodified library export. */
-export function buildCompactPriceTable(dataset) {
+export function buildCompactPriceTable(dataset, { scope = "market" } = {}) {
   if (!Array.isArray(dataset?.offers)) throw new Error("Compact CSV requires an offers dataset");
+  if (!["market", "regional"].includes(scope)) throw new Error("CSV scope must be market or regional");
   const providers = new Map((dataset.generatedCatalog?.providers ?? []).map((provider) => [provider.slug, provider.name]));
   const gpus = new Map((dataset.generatedCatalog?.gpus ?? []).map((gpu) => [gpu.slug, gpu]));
-  const offers = dataset.offers.filter(isComparableRegionalOffer).sort((a, b) => natural.compare(a.gpuModel ?? a.gpuSlug, b.gpuModel ?? b.gpuSlug)
+  const offers = dataset.offers.filter(scope === "regional" ? isComparableRegionalOffer : isMarketHourlyOffer).sort((a, b) => natural.compare(a.gpuModel ?? a.gpuSlug, b.gpuModel ?? b.gpuSlug)
     || natural.compare(a.billingUnit, b.billingUnit) || natural.compare(a.billingMode ?? a.rentalType, b.billingMode ?? b.rentalType)
     || (a.priceUsdPerGpuUnit ?? Infinity) - (b.priceUsdPerGpuUnit ?? Infinity)
     || natural.compare(a.providerSlug, b.providerSlug) || natural.compare(a.id, b.id));
@@ -163,7 +190,7 @@ export function buildCompactPriceTable(dataset) {
     if (!["GPU-hour", "GPU-month"].includes(offer.billingUnit)) throw new Error(`Unsupported billing period: ${offer.billingUnit}`);
     const status = offer.sourceAvailability ?? offer.availability;
     return [
-      configuration(offer, gpus.get(offer.gpuSlug)), providers.get(offer.providerSlug) ?? offer.providerSlug,
+      configuration(offer, gpus.get(offer.gpuSlug)), offerProviderLabel(offer, providers.get(offer.providerSlug) ?? offer.providerSlug),
       geography(offer), usdPrice(offer, dataset.fx), originalPrice(offer),
       offer.billingUnit === "GPU-hour" ? "每小时" : "每月",
       conditions(offer, dataset.fx),
@@ -181,7 +208,7 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function compactPricesToCsv(dataset) {
-  const { headers, rows } = buildCompactPriceTable(dataset);
+export function compactPricesToCsv(dataset, options) {
+  const { headers, rows } = buildCompactPriceTable(dataset, options);
   return `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }
