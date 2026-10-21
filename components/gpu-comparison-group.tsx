@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import type { Gpu, Offer, Provider } from "@/lib/data";
 import type { OfferComparisonGroup, OfferComparisonBucket } from "@/lib/offer-comparison";
-import { offerAudience, hasAdditionalEligibility } from "@/lib/offer-comparison";
+import { offerAudience, hasAdditionalEligibility, summarizeComparisonGroup } from "@/lib/offer-comparison";
 import { availabilityLabel, billingUnitLabel, formatAmount, formatOfferPrice, priceBasisLabel } from "@/lib/pricing";
 import { OfferDetails } from "./offer-details";
 import styles from "./price-explorer.module.css";
@@ -47,13 +47,40 @@ function BucketHeading({ bucket }: { bucket: OfferComparisonBucket }) {
   </div>;
 }
 
+function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audience: "regular" | "member"; providers: Map<string, Provider> }) {
+  const offer = offers[0];
+  const platforms = [...new Set(offers.map((entry) => providers.get(entry.providerSlug)?.name ?? entry.providerSlug))];
+  const configurations = [...new Set(offers.map((entry) => [entry.vramGb == null ? null : `${entry.vramGb} GB`, entry.gpuVariant, entry.gpuCount == null ? null : `${entry.gpuCount}× GPU node`].filter(Boolean).join(" · ") || "Configuration not published"))];
+  const locations = [...new Set(offers.map((entry) => entry.regions.slice().sort().join(" · ") || "Region not published"))];
+  const originals = new Set(offers.map((entry) => `${entry.sourceCurrency}|${entry.pricePerGpuUnit}|${entry.fx?.rateDate ?? ""}`));
+  return <div className={`${styles.summaryPrice} ${audience === "member" ? styles.summaryMember : ""}`}>
+    <span className={styles.summaryLabel}>Lowest {audience}</span>
+    {offer ? <>
+      <strong>{formatOfferPrice(offer)}</strong>
+      <span className={styles.summaryPlatforms}>{platforms.slice(0, 3).join(" · ")}{platforms.length > 3 ? ` +${platforms.length - 3} platforms` : ""}{offers.length > 1 && <small>{offers.length} tied offers</small>}</span>
+      <span className={styles.summaryConfiguration}>{configurations.length === 1 ? configurations[0] : "Multiple configurations · see quotes"}</span>
+      <span className={styles.summaryLocation}>{locations.length === 1 ? locations[0] : "Multiple locations · see quotes"}</span>
+      {originals.size > 1 ? <small className={styles.summaryOriginal}>Original amounts & FX in quotes</small> : offer.sourceCurrency !== "USD" && <small className={styles.summaryOriginal}>{formatAmount(offer.pricePerGpuUnit, offer.sourceCurrency)} original · FX <time dateTime={offer.fx?.rateDate}>{offer.fx?.rateDate}</time></small>}
+    </> : <><strong className={styles.noSummaryPrice}>—</strong><span className={styles.summaryEmpty}>No qualifying {audience} rate in these results</span></>}
+  </div>;
+}
+
 export function GpuComparisonGroup({ group, gpu, providers, id }: { group: OfferComparisonGroup; gpu: Gpu; providers: Map<string, Provider>; id: string }) {
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const summaries = summarizeComparisonGroup(group);
   const platformCount = new Set(group.offers.map((offer) => offer.providerSlug)).size;
   const configuration = (offer: Offer) => [offer.gpuCount !== null ? `${offer.gpuCount}× GPU` : null, offer.cloudTier, offer.vcpu ? `${offer.vcpu} vCPU` : null, offer.ramGb ? `${offer.ramGb} GB RAM` : null].filter(Boolean).join(" · ") || "See configuration details";
   const toggle = (offerId: string) => setExpanded(expanded === offerId ? null : offerId);
+  const collapse = () => { setOpen(false); setExpanded(null); trigger.current?.focus(); };
   return <section className={styles.modelGroup} aria-label={`${gpu.shortName} price comparison`}>
-    <header className={styles.modelHeading}><div><span className={styles.modelIcon} aria-hidden="true">▦</span><h3><Link href={`/gpus/${gpu.slug}`}>{gpu.shortName}</Link></h3></div><p>{platformCount} {platformCount === 1 ? "platform" : "platforms"}<span>·</span>{group.offers.length} offers</p></header>
+    <header className={styles.modelHeading}><h3><button ref={trigger} className={styles.modelToggle} type="button" aria-label={`${open ? "Collapse" : "Expand"} ${gpu.shortName} platform quotes`} aria-expanded={open} aria-controls={open ? `${id}-quotes` : undefined} onClick={() => { setOpen(!open); setExpanded(null); }}><span className={styles.modelIdentity}><span className={styles.modelIcon} aria-hidden="true">▦</span><span>{gpu.shortName}</span></span><span className={styles.modelCount}>{platformCount} {platformCount === 1 ? "platform" : "platforms"} · {group.offers.length} {group.offers.length === 1 ? "offer" : "offers"}</span><span className={styles.modelToggleLabel}>{open ? "Hide quotes" : "View quotes"}<Chevron open={open} /></span></button></h3></header>
+    <div className={styles.modelSummaries}>{summaries.map((summary) => <div className={styles.summaryRow} key={summary.key}>
+      <div className={styles.summaryPlan}><strong>{summary.rentalType}</strong><span>USD per {summary.billingUnit === "GPU-month" ? "GPU-month" : "GPU-hour"}</span><small>From rates across configurations</small></div>
+      <div className={styles.summaryGrid}><SummaryPrice offers={summary.lowestRegularOffers} audience="regular" providers={providers} /><SummaryPrice offers={summary.lowestMemberOffers} audience="member" providers={providers} /></div>
+    </div>)}</div>
+    {open && <div id={`${id}-quotes`} className={styles.modelQuotes}>
     {group.buckets.map((bucket, index) => <div className={styles.comparisonBucket} key={bucket.key}>
       <BucketHeading bucket={bucket} />
       <div className={styles.desktopResults}>
@@ -81,5 +108,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
         </article>;
       })}</div>
     </div>)}
+    <footer className={styles.groupFooter}><Link href={`/gpus/${gpu.slug}`}>GPU profile ↗</Link><button type="button" onClick={collapse}>Collapse {gpu.shortName}<Chevron open /></button></footer>
+    </div>}
   </section>;
 }

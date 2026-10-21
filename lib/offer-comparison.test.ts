@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Offer } from "./data";
 
-const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
+const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate, summarizeComparisonGroup } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "regular", gpuSlug: "nvidia-rtx-4090", providerSlug: "example", gpuCount: 1, gpuVariant: null, vramGb: 24,
@@ -102,4 +102,64 @@ test("converted minima require finite positive FX and a dated source without inv
   const group = groupOffersForComparison([converted, monthly])[0];
   assert.equal(group.buckets.length, 2);
   assert.deepEqual(group.buckets.map((bucket: { lowestRegularIds: string[] }) => bucket.lowestRegularIds), [["regular"], ["monthly"]]);
+});
+
+test("collapsed summaries keep hourly, monthly, spot and reserved prices in separate plan rows", () => {
+  const group = groupOffersForComparison([
+    quote({ id: "monthly", billingUnit: "GPU-month", rentalType: "Monthly", priceUsdPerGpuUnit: 80, pricePerGpuHour: null }),
+    quote({ id: "spot", rentalType: "Spot", priceUsdPerGpuUnit: 0.2 }),
+    quote({ id: "reserved", rentalType: "Reserved", priceUsdPerGpuUnit: 0.5 }),
+    quote({ id: "on-demand", priceUsdPerGpuUnit: 2 }),
+    quote({ id: "monthly-on-demand", billingUnit: "GPU-month", priceUsdPerGpuUnit: 200, pricePerGpuHour: null }),
+  ])[0];
+  const summaries = summarizeComparisonGroup(group);
+  assert.deepEqual(summaries.map((summary) => [summary.billingUnit, summary.rentalType]), [
+    ["GPU-hour", "On-demand"], ["GPU-hour", "Spot"], ["GPU-hour", "Reserved"],
+    ["GPU-month", "On-demand"], ["GPU-month", "Monthly"],
+  ]);
+  assert.equal(new Set(summaries.map((summary) => summary.key)).size, summaries.length);
+  assert.deepEqual(summaries.map((summary) => summary.lowestRegularOffers.map((offer) => offer.id)), [
+    ["on-demand"], ["spot"], ["reserved"], ["monthly-on-demand"], ["monthly"],
+  ]);
+  assert.equal(summaries.at(-1)!.lowestRegularOffers[0].pricePerGpuHour, null);
+});
+
+test("collapsed summaries span configurations, retain every tied original offer, and separate member minima", () => {
+  const regular = quote({ id: "regular-cheapest", providerSlug: "autodl", priceUsdPerGpuUnit: 1 });
+  const regularTie = quote({ id: "regular-node-tie", providerSlug: "runpod", gpuVariant: "SXM", vramGb: 48, gpuCount: 8, priceBasis: "instance_total_allocated", instancePriceUsd: 8, priceUsdPerGpuUnit: 1 });
+  const member = quote({ id: "member-cheapest", providerSlug: "autodl", gpuVariant: "4090_48G", vramGb: 48, membershipRequired: true, priceUsdPerGpuUnit: 0.5 });
+  const memberTie = quote({ id: "member-tie", providerSlug: "second", conditions: ["会员专享价格"], priceUsdPerGpuUnit: 0.5 });
+  const group = groupOffersForComparison([
+    quote({ id: "regular-higher", gpuVariant: "HGX", priceUsdPerGpuUnit: 3 }),
+    quote({ id: "member-higher", membershipRequired: true, priceUsdPerGpuUnit: 1.5 }),
+    regular, regularTie, member, memberTie,
+  ])[0];
+  const inputIds = group.offers.map((offer) => offer.id);
+  const summary = summarizeComparisonGroup(group)[0];
+  assert.deepEqual(summary.lowestRegularOffers.map((offer) => offer.id).sort(), [regular.id, regularTie.id].sort());
+  assert.deepEqual(summary.lowestMemberOffers.map((offer) => offer.id).sort(), [member.id, memberTie.id].sort());
+  assert.equal(summary.lowestRegularOffers.find((offer) => offer.id === regularTie.id), regularTie);
+  assert.equal(summary.lowestMemberOffers.find((offer) => offer.id === member.id), member);
+  assert.equal(regularTie.gpuCount, 8);
+  assert.deepEqual(group.offers.map((offer) => offer.id), inputIds);
+  assert.ok(group.buckets.length > 1);
+});
+
+test("collapsed summaries never substitute offline, historical, conditional or partial prices for a missing minimum", () => {
+  const excluded: Partial<Offer>[] = [
+    { availability: "unavailable" }, { dataStatus: "seed" },
+    { priceBasis: "starting_price", quoteStatus: "starting_at" },
+    { priceBasis: "gpu_component" }, { quoteStatus: "contact_sales" },
+    { conditions: ["New-customer price"] },
+    { membershipRequired: true, conditions: ["Prepaid promotional price"] },
+    { sourceCurrency: "CNY", fx: null },
+  ];
+  const group = groupOffersForComparison(excluded.map((change, i) => quote({ id: `excluded-${i}`, priceUsdPerGpuUnit: 0.01, ...change })))[0];
+  assert.deepEqual(summarizeComparisonGroup(group).map((summary) => [summary.lowestRegularOffers, summary.lowestMemberOffers]), [[[], []]]);
+  assert.equal(group.offers.length, excluded.length);
+
+  const memberOnly = groupOffersForComparison([quote({ id: "member-only", membershipRequired: true })])[0];
+  assert.deepEqual(summarizeComparisonGroup(memberOnly)[0].lowestRegularOffers, []);
+  assert.deepEqual(summarizeComparisonGroup(memberOnly)[0].lowestMemberOffers.map((offer) => offer.id), ["member-only"]);
+  assert.deepEqual(summarizeComparisonGroup({ gpuSlug: "nvidia-rtx-4090", buckets: [], offers: [] }), []);
 });
