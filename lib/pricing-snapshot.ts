@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
-import bundledDataset from "@/data/offers.json";
+import { loadBundledPricingDataset } from "@/lib/bundled-snapshot";
 import { createPricingData, type PricingDataset } from "@/lib/data";
 import { createSnapshotStore } from "@/lib/public-snapshot";
 
@@ -11,7 +11,7 @@ const processState = globalThis as typeof globalThis & {
   rackratePublicPricingV1?: ReturnType<typeof createSnapshotStore>;
 };
 const store = processState.rackratePublicPricingV1 ??= createSnapshotStore({
-  fallback: bundledDataset as unknown as PricingDataset,
+  fallback: loadBundledPricingDataset(),
 });
 const projections = new WeakMap<PricingDataset, ReturnType<typeof createPricingData>>();
 

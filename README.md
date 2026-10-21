@@ -42,6 +42,8 @@ PORT=3000 node .next/standalone/server.js
 
 Or build and run the included Dockerfile.
 
+The bundled fallback snapshot is read from its original JSON file and validated at server startup. `outputFileTracingIncludes` copies `data/offers.json` into the standalone image. Keep this file read as raw UTF-8: importing it as a JSON module can change the last binary digit of an FX number during compilation and invalidate its exact provenance.
+
 ## Configuration
 
 Copy `.env.example` to `.env.local` and set:
