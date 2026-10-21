@@ -1,18 +1,10 @@
 import type { ReactNode } from "react";
 import type { Offer } from "@/lib/data";
-import {
-  availabilityLabel,
-  billingUnitLabel,
-  formatFxRate,
-  formatInstancePrice,
-  formatOfferPrice,
-  formatOriginalInstancePrice,
-  formatOriginalPrice,
-  priceBasisLabel,
-} from "@/lib/pricing";
+import { availabilityLabel, billingUnitLabel, cloudTierLabel, isAccountSpecificPrice, priceBasisLabel } from "@/lib/pricing";
+import { offerAudience } from "@/lib/offer-comparison";
+import { getOfferCountryCodes, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
 
 type PublicOfferDetails = Offer & {
-  location?: Record<string, unknown> | null;
   promotion?: Record<string, unknown> | null;
   selectedConfiguration?: Record<string, unknown> | null;
   sourceConditions?: Record<string, unknown> | null;
@@ -20,117 +12,148 @@ type PublicOfferDetails = Offer & {
   membershipDiscount?: string | null;
   pricingProductScope?: string[] | null;
   billingMeter?: string | null;
-  accountScope?: string | null;
   taxScope?: string | null;
   effectiveFrom?: string | null;
   effectiveUntil?: string | null;
 };
 
 type DetailItem = [label: string, value: ReactNode];
-const absent = "Not published";
 const fieldLabel = (key: string) => key.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 function sourceValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return absent;
+  if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (Array.isArray(value)) return value.length ? value.map(sourceValue).join(" · ") : absent;
-  if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${fieldLabel(key)}: ${sourceValue(item)}`).join("; ");
+  if (Array.isArray(value)) return value.map(sourceValue).join(" · ");
+  if (typeof value === "object") return Object.entries(value).filter(([, item]) => item !== null && item !== undefined && item !== "")
+    .map(([key, item]) => `${fieldLabel(key)}: ${sourceValue(item)}`).join("; ");
   return String(value);
 }
 function exactAmount(value: string | null | undefined, fallback: number | null | undefined, currency: string, unit: string) {
   const amount = value ?? (fallback === null || fallback === undefined ? null : String(fallback));
-  return amount === null ? absent : `${amount} ${currency} / ${unit}`;
+  return amount === null ? "—" : `${amount} ${currency} / ${unit}`;
 }
 function timestamp(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value} (date only; time not published)`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().replace("T", " ").replace(/\.000Z$/, " UTC").replace(/Z$/, " UTC") : value;
+  return Number.isFinite(parsed.getTime())
+    ? `${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(parsed)} China time`
+    : value;
 }
 function DetailList({ items }: { items: DetailItem[] }) {
   return <dl className="quote-detail-list">{items.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
+function knownNumber(value: unknown): value is number | string {
+  return (typeof value === "number" || typeof value === "string") && value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+function quantity(resources: Record<string, unknown>, fields: [string, string][]): string | null {
+  for (const [field, unit] of fields) if (knownNumber(resources[field])) return `${resources[field]} ${unit}`;
+  return null;
+}
+function storageLabel(resources: Record<string, unknown>): string | null {
+  const storage = resources.storage;
+  if (storage && typeof storage === "object" && !Array.isArray(storage)) {
+    const item = storage as Record<string, unknown>;
+    if (knownNumber(item.amount) && typeof item.unit === "string") return [item.amount, item.unit, item.type].filter(Boolean).join(" ");
+  }
+  return quantity(resources, [["storage_gib", "GiB"], ["storage_gb", "GB"], ["disk_gb", "GB"]]);
+}
 
 export function OfferDetails({ offer }: { offer: Offer }) {
   const published = offer as PublicOfferDetails;
+  const resources = offer.resources ?? {};
   const unit = billingUnitLabel(offer);
-  const regions = offer.regions ?? [];
-  const zones = offer.zones ?? [];
-  const conditions = offer.conditions ?? [];
-  const nodeUnit = offer.instanceBillingUnit === "instance-month" ? "node / month" : "node / hour";
-  const resources = Object.entries(offer.resources ?? {}).map(([key, value]): DetailItem => [fieldLabel(key), sourceValue(value)]);
-  const configuration: DetailItem[] = [
-    ["Source listing", offer.rawName ?? absent],
-    ["Source GPU model", offer.rawGpuModel ?? offer.gpuModel ?? absent],
-    ["Variant", offer.gpuVariant ?? absent],
-    ["SKU", offer.rawSku ?? absent],
-    ["GPU count", offer.gpuCount ?? absent],
-    ["VRAM per GPU", offer.vramGb == null ? absent : `${offer.vramGb} GB`],
-    ["vCPU", offer.vcpu ?? absent],
-    ["System RAM", offer.ramGb == null ? absent : `${offer.ramGb} GB`],
-  ];
-  if (published.selectedConfiguration) configuration.push(["Selected source configuration", sourceValue(published.selectedConfiguration)]);
-
-  const price: DetailItem[] = [
-    ["USD per GPU", <>{formatOfferPrice(offer)}{offer.pricePerGpuUnit !== null && ` / ${unit}`}</>],
-    ["Original per GPU", formatOriginalPrice(offer)],
-    ["USD node total", formatInstancePrice(offer)],
-    ["Original node total", formatOriginalInstancePrice(offer) || absent],
-    ["Exact source price", exactAmount(offer.sourceAmount, offer.pricePerGpuUnit, offer.sourceCurrency, unit)],
-    ["Exact USD price", exactAmount(offer.usdSourceAmount, offer.priceUsdPerGpuUnit, "USD", unit)],
-  ];
-  if (offer.instancePrice !== null && offer.instancePrice !== undefined) {
-    price.push(
-      ["Exact source node total", exactAmount(offer.instanceSourceAmount, offer.instancePrice, offer.instanceCurrency ?? offer.sourceCurrency, nodeUnit)],
-      ["Exact USD node total", exactAmount(offer.instanceUsdSourceAmount, offer.instancePriceUsd, "USD", nodeUnit)],
-    );
+  const converted = offer.sourceCurrency !== "USD";
+  const perGpuResources = resources.allocation_scope === "per_gpu";
+  const configuration: DetailItem[] = [];
+  const model = offer.rawGpuModel ?? offer.gpuModel;
+  const name = offer.rawName ?? model ?? "";
+  const compactName = name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const gpu = [name,
+    model && !compactName.includes(model.toUpperCase().replace(/[^A-Z0-9]/g, "")) ? model : null,
+    offer.gpuVariant && !compactName.includes(offer.gpuVariant.toUpperCase().replace(/[^A-Z0-9]/g, "")) ? offer.gpuVariant : null,
+    offer.vramGb != null && !new RegExp(`${offer.vramGb}\\s*GB\\b`, "i").test(name) ? `${offer.vramGb} GB VRAM` : null,
+  ].filter(Boolean).join(" · ");
+  if (gpu) configuration.push(["GPU", gpu]);
+  if (offer.gpuCount != null) configuration.push(["GPUs per node", offer.gpuCount]);
+  const cpu = knownNumber(offer.vcpu) ? `${offer.vcpu} vCPU`
+    : quantity(resources, [["vcpus", "vCPU"], ["vcpu_count", "vCPU"], ["cpu_count", "CPUs"], ["cpu_cores_per_gpu", "CPU cores per GPU"]]);
+  if (cpu) configuration.push(["CPU", cpu]);
+  const ram = quantity(resources, [["memory_gib", "GiB"], ["ram_gib", "GiB"], ["memory_mb", "MB"], ["ram_mb", "MB"], ["ram_gb", "GB"], ["memory_gb", "GB"]])
+    ?? (knownNumber(offer.ramGb) ? `${offer.ramGb} GB` : null);
+  if (ram) configuration.push([perGpuResources ? "RAM per GPU" : "System RAM", ram]);
+  const memoryPerGpu = resources.memory_per_gpu as { amount?: unknown; unit?: unknown } | undefined;
+  if (!ram && memoryPerGpu && knownNumber(memoryPerGpu.amount) && typeof memoryPerGpu.unit === "string") {
+    configuration.push(["RAM per GPU", `${memoryPerGpu.amount} ${memoryPerGpu.unit}`]);
   }
-  price.push(["Exchange rate", formatFxRate(offer)]);
-  if (offer.fx) {
-    if (offer.sourceCurrency !== "USD") {
-      price.push(["Exact rate to USD", `1 ${offer.sourceCurrency} = ${offer.fx.rateToUsdDecimal ?? String(offer.fx.rateToUsd)} USD`]);
-      price.push(["FX reference date", offer.fx.rateDate]);
-      price.push(["FX source", <a href={offer.fx.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.fx.sourceName} ↗</a>]);
+  const storage = storageLabel(resources);
+  if (storage) configuration.push(["Storage", storage]);
+  const network = quantity(resources, [["bandwidth_mbps", "Mbps"], ["bandwidth_gbps", "Gbps"], ["network_gbps", "Gbps"]]);
+  if (network) configuration.push(["Network", network]);
+
+  const price: DetailItem[] = [];
+  if (offer.quoteStatus === "contact_sales") price.push(["Price", "Contact sales"]);
+  else {
+    const prefix = offer.quoteStatus === "starting_at" ? "From " : "";
+    price.push([converted ? "Original per GPU" : "Price per GPU", `${prefix}${exactAmount(offer.sourceAmount, offer.pricePerGpuUnit, offer.sourceCurrency, unit)}`]);
+    if (converted) price.push(["USD equivalent", `≈ ${prefix}${exactAmount(offer.usdSourceAmount, offer.priceUsdPerGpuUnit, "USD", unit)}`]);
+    const nodeCurrency = offer.instanceCurrency ?? offer.sourceCurrency;
+    const separateNodeTotal = offer.instancePrice != null && ((offer.gpuCount ?? 0) > 1
+      || nodeCurrency !== offer.sourceCurrency || offer.instancePrice !== offer.pricePerGpuUnit);
+    if (separateNodeTotal) {
+      const nodeUnit = offer.instanceBillingUnit === "instance-month" ? "node / month" : "node / hour";
+      price.push(["Node total", exactAmount(offer.instanceSourceAmount, offer.instancePrice, nodeCurrency, nodeUnit)]);
+      if (nodeCurrency !== "USD") price.push(["USD node total", `≈ ${exactAmount(offer.instanceUsdSourceAmount, offer.instancePriceUsd, "USD", nodeUnit)}`]);
     }
-    if (offer.fx.observedAt) price.push(["FX fetched at", timestamp(offer.fx.observedAt)]);
-    if (offer.fx.formula) price.push(["Conversion", offer.fx.formula]);
-    if (offer.fx.rounding) price.push(["Conversion precision", offer.fx.rounding]);
+  }
+  price.push(["Price basis", priceBasisLabel(offer)]);
+  if (converted && offer.fx && offer.quoteStatus !== "contact_sales") {
+    price.push(["Exchange rate", <>1 {offer.sourceCurrency} = {offer.fx.rateToUsdDecimal ?? offer.fx.rateToUsd} USD<br /><a href={offer.fx.sourceUrl} target="_blank" rel="nofollow noreferrer">ECB · {offer.fx.rateDate} ↗</a></>]);
   }
 
-  const locationAndTerms: DetailItem[] = [
-    ["Regions", regions.length ? regions.join(" · ") : absent],
-    ["Availability zones", zones.length ? zones.join(" · ") : absent],
-    ["Geographic scope", offer.regionScope ?? offer.geographicScope ?? absent],
-    ["Purchase model", offer.rentalType],
-    ["Billing period", unit],
-    ["Price basis", priceBasisLabel(offer)],
-    ["Price tier", offer.pricingTier ?? absent],
-    ["Cloud tier", offer.cloudTier ?? absent],
-    ["Membership", offer.membershipRequired === true ? "Required; eligibility not verified" : offer.membershipRequired === false ? "Not required by this listed tier" : absent],
-    ["Availability", offer.dataStatus === "seed" ? "Historical reference / not live" : availabilityLabel[offer.availability]],
-  ];
-  if (offer.countryCode) locationAndTerms.push(["Published country", offer.countryCode]);
-  if (published.location) locationAndTerms.push(["Published location details", sourceValue(published.location)]);
-  if (published.minimumCommitment !== null && published.minimumCommitment !== undefined) locationAndTerms.push(["Minimum commitment", sourceValue(published.minimumCommitment)]);
-  if (published.membershipDiscount) locationAndTerms.push(["Published membership discount", published.membershipDiscount]);
-  if (published.promotion) locationAndTerms.push(["Promotion and eligibility", sourceValue(published.promotion)]);
-  if (published.sourceConditions) locationAndTerms.push(["Additional source conditions", sourceValue(published.sourceConditions)]);
-  if (published.pricingProductScope?.length) locationAndTerms.push(["Applicable products", published.pricingProductScope.join(" · ")]);
-  if (published.billingMeter) locationAndTerms.push(["Usage metering", published.billingMeter]);
-  if (published.accountScope) locationAndTerms.push(["Customer price scope", published.accountScope]);
-  if (published.taxScope) locationAndTerms.push(["Tax treatment", published.taxScope]);
+  const regions = publishedRegionCodes(offer);
+  const zones = offer.zones ?? [];
+  const platformCoverage = offer.priceScope === "platform_coverage";
+  const terms: DetailItem[] = [[platformCoverage ? "Platform coverage" : "Region", regions.length
+    ? `${regions.map((region) => publishedRegionLabel(offer, region)).join(" · ")}${platformCoverage ? " · rate not verified by region" : ""}`
+    : "Not listed"]];
+  if (zones.length) terms.push(["Zone", zones.join(" · ")]);
+  const audience = offerAudience(offer);
+  const tier = isAccountSpecificPrice(offer) ? (/contract/i.test(offer.accountScope ?? "") ? "Account contract quote" : "Account-specific quote")
+    : /^authenticated/.test(offer.accountScope ?? "") ? "Signed-in catalog"
+      : audience === "member" ? "Member price; eligibility not verified"
+        : audience === "conditional" ? "Conditional price" : "Regular price";
+  terms.push(["Plan", [offer.rentalType, cloudTierLabel(offer)].filter(Boolean).join(" · ")], ["Price access", tier]);
+  terms.push(["Availability", offer.dataStatus === "seed" ? "Historical reference" : availabilityLabel[offer.availability]]);
+  const countryRestriction = offer.conditions.find((condition) => /prices apply to companies from Israel/i.test(condition));
+  if (countryRestriction) terms.push(["Eligibility", countryRestriction]);
+  if (published.minimumCommitment != null) terms.push(["Minimum term", sourceValue(published.minimumCommitment)]);
+  if (published.taxScope === "excluded" || published.taxScope === "included") terms.push(["Tax", published.taxScope === "excluded" ? "Excluded" : "Included"]);
 
+  const additional: DetailItem[] = [];
+  if (published.promotion) additional.push(["Promotion", sourceValue(published.promotion)]);
+  if (published.sourceConditions) additional.push(["Source terms", sourceValue(published.sourceConditions)]);
+  if (published.selectedConfiguration) additional.push(["Selected configuration", sourceValue(published.selectedConfiguration)]);
+  if (published.membershipDiscount) additional.push(["Membership discount", published.membershipDiscount]);
+  if (published.pricingProductScope?.length) additional.push(["Applicable products", published.pricingProductScope.join(" · ")]);
+  if (published.billingMeter) additional.push(["Billing meter", published.billingMeter]);
+  if (Array.isArray(resources.disks) && resources.disks.length) additional.push(["Disks", sourceValue(resources.disks)]);
+  const countries = getOfferCountryCodes(offer);
+  if (countries.length) additional.push(["Country codes", countries.join(" · ")]);
+  const locationSource = offer.locationSource?.source_url ?? offer.locationSource?.api_url ?? offer.locationSource?.url;
+  if (typeof locationSource === "string" && /^https?:\/\//.test(locationSource)) {
+    additional.push(["Country mapping", <a href={locationSource} target="_blank" rel="nofollow noreferrer">Official location directory ↗</a>]);
+  }
+  const conditions = [...new Set(offer.conditions ?? [])];
   const source: DetailItem[] = [
-    ["Evidence", offer.dataStatus === "official-page" ? "Official public source" : "Dated reference / not live"],
-    ["Original source", <a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.sourceUrl} ↗</a>],
-    ["Observed at", <time dateTime={offer.observedAt}>{timestamp(offer.observedAt)}</time>],
-    ["Quote status", offer.quoteStatus === "contact_sales" ? "Contact sales; no public numeric price" : offer.quoteStatus === "starting_at" ? "Starting price; final quote can differ" : "Published quote"],
+    ["Source", <a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.dataStatus === "seed" ? "Historical source" : "Official pricing source"} ↗</a>],
+    ["Collected", <time dateTime={offer.observedAt}>{timestamp(offer.observedAt)}</time>],
   ];
-  if (published.effectiveFrom) source.push(["Price effective from", timestamp(published.effectiveFrom)]);
-  if (published.effectiveUntil) source.push(["Price effective until", timestamp(published.effectiveUntil)]);
+  if (published.effectiveFrom) source.push(["Effective from", timestamp(published.effectiveFrom)]);
+  if (published.effectiveUntil) source.push(["Effective until", timestamp(published.effectiveUntil)]);
 
   return <div className="quote-detail-grid">
-    <section className="quote-detail-section"><h4>Configuration</h4><DetailList items={configuration} />{resources.length > 0 && <DetailList items={resources} />}</section>
-    <section className="quote-detail-section"><h4>Price &amp; exchange rate</h4><DetailList items={price} /><p>Monthly prices stay monthly. Currency conversion does not include payment fees or exchange spreads.</p></section>
-    <section className="quote-detail-section"><h4>Location &amp; terms</h4><DetailList items={locationAndTerms} />{conditions.length > 0 && <ul className="quote-detail-notes">{conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul>}</section>
-    <section className="quote-detail-section"><h4>Source</h4><DetailList items={source} /><p>{offer.dataStatus === "seed" ? "This is a historical observation. Its original availability does not describe current inventory." : "A public price does not confirm current stock, purchase eligibility or the final checkout total."}</p></section>
+    <section className="quote-detail-section"><h4>Configuration</h4><DetailList items={configuration} /></section>
+    <section className="quote-detail-section"><h4>Price</h4><DetailList items={price} /></section>
+    <section className="quote-detail-section"><h4>Terms</h4><DetailList items={terms} />{(additional.length > 0 || conditions.length > 0) && <details><summary>More terms &amp; source notes</summary><DetailList items={additional} />{conditions.length > 0 && <ul className="quote-detail-notes">{conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul>}</details>}</section>
+    <section className="quote-detail-section"><h4>Source</h4><DetailList items={source} /></section>
   </div>;
 }

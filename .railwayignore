@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.git/
+.venv/
+.env*
+*.log
+*.tsbuildinfo
+.github/
+docs/
+scripts/
+**/*.test.ts
+data/public-prices.json
+data/price-history.json
+data/fx-rates.json
