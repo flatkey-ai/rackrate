@@ -21,6 +21,8 @@ An unavailable, incomplete, malformed or older upstream snapshot cannot replace 
 
 The public verifier only performs GET requests. It cannot choose the server's upstream URL, activate another commit or change credentials. A verification failure after a successful data commit leaves that validated data on main; a later normal manual run can retry publication checks without collecting again. Verified collection artifacts remain available for diagnosis.
 
+`publication.status=current` means the website serves the latest verified GitHub snapshot. It does not mean the providers were collected today. `publication.checkedAt` is the snapshot check time; use `generatedAt`, source `fetchedAt` and quote `observedAt` to assess collection freshness. A successful fetch proves what the official source returned at that time, not current stock or a final account-specific checkout price. Historical references and offline listings keep their own dates and labels.
+
 ## Manual operation and Codex supervision
 
 Use GitHub Actions **Refresh public GPU pricing data** to run or inspect the workflow. `force_refresh` defaults to false. Only an explicit manual `workflow_dispatch` with `force_refresh=true` bypasses today's successful collection; scheduled events ignore force. Branch-dispatched runs always collect and validate, but do not commit to main or query production publication.

@@ -165,6 +165,18 @@ test("invalid prices, inconsistent contact-sales, unsupported units and duplicat
   assert.throws(() => normalizeLibraryResult(fixture([quote("nebius")])), /Duplicate offer id/);
 });
 
+test("incomplete collection reports the failing sources without upstream response text", () => {
+  const value = fixture();
+  value.status = "partial";
+  value.provider_results[0] = { provider: "nebius", status: "failed", returned_count: 0,
+    error: { code: "parse_failed", message: "untrusted response body" } };
+  value.provider_results[1] = { provider: "crusoe", status: "failed", returned_count: 0,
+    error: { code: "unsafe response body", message: "untrusted response body" } };
+  assert.throws(() => validatePublicResult(value), {
+    message: "Public collection was incomplete: nebius (parse_failed), crusoe; existing data was preserved",
+  });
+});
+
 test("zero is retained as an actual published amount", () => {
   const result = fixture();
   result.prices[0].amount = "0";
