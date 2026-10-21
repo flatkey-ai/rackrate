@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildRackRateDataset, collectPublicLibrary, collectPublicLibraryBundle, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
   PYTHON_COLLECTION_CODE, PYTHON_BUNDLE_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
-  validatePublicLibraryBundle, validateOffers,
+  publicCsvColumns, validatePublicLibraryBundle, validateOffers,
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
@@ -48,7 +48,11 @@ const fixtureCsv = '\uFEFFprovider,gpu_model,amount,currency,unit,price_scope,av
   + 'digitalocean,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
   + 'verda,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
   + 'azure,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n';
-function bundle(result = fixture()) { return { result, csv: fixtureCsv }; }
+const bilingualFixtureCsv = fixtureCsv.replace(
+  "provider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,collected_at,collection_status,notes\r\n",
+  "provider（平台）,gpu_model（GPU型号）,amount（原币价格）,currency（币种）,unit（计费单位）,price_scope（地区价格范围）,availability（可用状态）,observed_at（报价采集时间）,collected_at（批次采集时间）,collection_status（采集状态）,notes（备注）\r\n",
+);
+function bundle(result = fixture(), csv = bilingualFixtureCsv) { return { result, csv }; }
 test("the scheduled collector requires exactly all nine selected competitors", () => {
   assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "azure"]);
 });
@@ -225,19 +229,34 @@ test("Python bundle serializes the same single collection with the library CSV e
   } });
   assert.equal(calls, 1);
   assert.deepEqual(result.result, expected.result);
-  assert.equal(result.csv, fixtureCsv);
+  assert.equal(result.csv, bilingualFixtureCsv);
   assert.equal((PYTHON_BUNDLE_COLLECTION_CODE.match(/result = collect_prices\(/g) ?? []).length, 1);
   assert.ok(PYTHON_BUNDLE_COLLECTION_CODE.includes("prices_to_csv(result)"));
   assert.ok(!PYTHON_BUNDLE_COLLECTION_CODE.includes("from_env"));
   await assert.rejects(collectPublicLibraryBundle({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
 });
 
+test("bundle accepts bilingual or legacy English headers and preserves every CSV value byte", () => {
+  for (const csv of [bilingualFixtureCsv, fixtureCsv]) {
+    assert.equal(validatePublicLibraryBundle(bundle(fixture(), csv)).csv, csv);
+    assert.equal(publicCsvColumns(csv)[0], "provider");
+  }
+  assert.deepEqual(publicCsvColumns(bilingualFixtureCsv), publicCsvColumns(fixtureCsv));
+  assert.equal(bilingualFixtureCsv.slice(bilingualFixtureCsv.indexOf("\r\n")), fixtureCsv.slice(fixtureCsv.indexOf("\r\n")));
+});
+
 test("bundle rejects missing CSV, empty tables and unexpected headers without line-counting quoted fields", () => {
-  assert.equal(validatePublicLibraryBundle(bundle()).csv, fixtureCsv);
+  assert.equal(validatePublicLibraryBundle(bundle()).csv, bilingualFixtureCsv);
   for (const csv of [undefined, "", fixtureCsv.slice(1), fixtureCsv.replaceAll("\r\n", "\n"),
     fixtureCsv.slice(0, fixtureCsv.indexOf("\r\n") + 2), fixtureCsv.replace("price_scope", "location"),
     fixtureCsv.replace("provider,gpu_model", "provider,provider")]) {
     assert.throws(() => validatePublicLibraryBundle({ result: fixture(), csv }), /Public CSV/);
+  }
+  for (const csv of [bilingualFixtureCsv.replace("gpu_model（GPU型号）", "provider（GPU型号）"),
+    bilingualFixtureCsv.replace("provider（平台）", "provider（平台"),
+    bilingualFixtureCsv.replace("provider（平台）", "provider（）"),
+    bilingualFixtureCsv.replace("price_scope（地区价格范围）", "location（地区价格范围）")]) {
+    assert.throws(() => validatePublicLibraryBundle(bundle(fixture(), csv)), /Public CSV/);
   }
   const failed = bundle();
   failed.result.status = "partial";
@@ -339,7 +358,7 @@ test("refresh retains complete raw provenance and publishes dataset after histor
     move: async (from, to) => publications.push([from, to]), remove: async () => {},
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
-  assert.equal(files.get("/example/data/public-prices.csv.tmp"), fixtureCsv);
+  assert.equal(files.get("/example/data/public-prices.csv.tmp"), bilingualFixtureCsv);
   assert.ok(publications.some(([, to]) => to === "/example/data/public-prices.csv"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");

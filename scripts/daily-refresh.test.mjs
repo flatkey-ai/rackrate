@@ -15,8 +15,10 @@ function snapshot(collectedAt) {
 }
 // Synthetic CSV fixture, not an application-side serializer. Quotes include a
 // comma and newline so physical-line counting cannot define record validity.
-function csvFor(collectedAt) {
-  const header = "provider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,notes,collected_at,collection_status";
+function csvFor(collectedAt, { bilingual = true } = {}) {
+  const header = bilingual
+    ? "provider（平台）,gpu_model（GPU型号）,amount（原币价格）,currency（币种）,unit（计费单位）,price_scope（地区价格范围）,availability（可用状态）,observed_at（报价采集时间）,notes（备注）,collected_at（批次采集时间）,collection_status（采集状态）"
+    : "provider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,notes,collected_at,collection_status";
   return "\uFEFF" + [header, ...REQUIRED_PROVIDERS.map((provider) =>
     `${provider},H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,${collectedAt},"detail, note\r\ncontinued",${collectedAt},success`)].join("\r\n") + "\r\n";
 }
@@ -58,11 +60,21 @@ test("missing or invalid CSV refreshes an already successful JSON-only collectio
 test("a CSV from an earlier batch or with different exact batch time triggers collection", () => {
   const collectedAt = "2026-10-20T02:40:00Z";
   const complete = snapshot(collectedAt);
-  assert.equal(collectionIsDue(complete, now, csvFor("2026-10-19T03:00:00Z")), true);
-  assert.equal(collectionIsDue(complete, now, csvFor("2026-10-20T02:30:00Z")), true);
-  assert.equal(collectionIsDue(complete, now, csvFor("2026-10-20T02:40:00.000Z")), true);
-  assert.equal(collectionIsDue(complete, now, csvFor(collectedAt).replaceAll(",success\r\n", ",partial\r\n")), true);
-  assert.equal(collectionIsDue(complete, now, csvFor(collectedAt)), false);
+  for (const bilingual of [true, false]) {
+    assert.equal(collectionIsDue(complete, now, csvFor("2026-10-19T03:00:00Z", { bilingual })), true);
+    assert.equal(collectionIsDue(complete, now, csvFor("2026-10-20T02:30:00Z", { bilingual })), true);
+    assert.equal(collectionIsDue(complete, now, csvFor("2026-10-20T02:40:00.000Z", { bilingual })), true);
+    assert.equal(collectionIsDue(complete, now, csvFor(collectedAt, { bilingual }).replaceAll(",success\r\n", ",partial\r\n")), true);
+    assert.equal(collectionIsDue(complete, now, csvFor(collectedAt, { bilingual })), false);
+  }
+});
+
+test("same-batch legacy English CSV remains valid during bilingual-header rollout", () => {
+  const collectedAt = "2026-10-20T02:40:00Z";
+  const complete = snapshot(collectedAt);
+  assert.equal(shouldCollectPrices(complete, { now, csv: csvFor(collectedAt) }), false);
+  assert.equal(shouldCollectPrices(complete, { now, csv: csvFor(collectedAt, { bilingual: false }) }), false);
+  assert.equal(collectionIsDue(complete, now, csvFor(collectedAt).replace("collection_status（采集状态）", "status（采集状态）")), true);
 });
 
 test("a prior five-source run cannot suppress the expanded nine-source collection", () => {

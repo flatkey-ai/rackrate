@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.9.0";
-export const LIBRARY_COMMIT = "67c70ae5da2700f932242de224956f1b203ac539";
+export const LIBRARY_VERSION = "0.10.0";
+export const LIBRARY_COMMIT = "48d6a75d2a39c7da2627c52aa2a8d8477a2d7b5e";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -68,6 +68,20 @@ export async function collectPublicLibrary(options = {}) {
   return validatePublicResult(await readPublicPython(PYTHON_COLLECTION_CODE, options));
 }
 
+export function publicCsvColumns(csv) {
+  const headerEnd = typeof csv === "string" ? csv.indexOf("\r\n") : -1;
+  if (headerEnd < 0 || !csv.startsWith("\uFEFF")) {
+    throw new Error("Public CSV has an unexpected header; existing data was preserved");
+  }
+  return csv.slice(1, headerEnd).split(",").map((label) => {
+    // The library preserves English column IDs and adds optional Chinese
+    // labels in full-width parentheses. Never translate or rewrite CSV rows.
+    const match = /^([a-z][a-z0-9_]*)(?:（[^（）,\r\n"]+）)?$/.exec(label);
+    if (!match) throw new Error("Public CSV has an unexpected header; existing data was preserved");
+    return match[1];
+  });
+}
+
 export function validatePublicLibraryBundle(bundle) {
   validatePublicResult(bundle?.result);
   const csv = bundle.csv;
@@ -75,10 +89,10 @@ export function validatePublicLibraryBundle(bundle) {
     throw new Error("Public CSV is missing its UTF-8 BOM or CRLF framing; existing data was preserved");
   }
   const headerEnd = csv.indexOf("\r\n");
-  const columns = csv.slice(1, headerEnd).split(",");
+  const columns = publicCsvColumns(csv);
   const required = ["provider", "gpu_model", "amount", "currency", "unit", "price_scope", "availability", "observed_at", "collected_at", "collection_status"];
   if (headerEnd < 0 || headerEnd + 2 === csv.length
-      || new Set(columns).size !== columns.length || columns.some((column) => !/^[a-z][a-z0-9_]*$/.test(column))
+      || new Set(columns).size !== columns.length
       || required.some((column) => !columns.includes(column))) {
     throw new Error("Public CSV has no quote rows or an unexpected header; existing data was preserved");
   }

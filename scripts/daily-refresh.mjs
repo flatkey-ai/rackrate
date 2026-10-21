@@ -1,7 +1,7 @@
 import { readFile, appendFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { REQUIRED_PROVIDERS, validatePublicLibraryBundle } from "./lib/library.mjs";
+import { REQUIRED_PROVIDERS, publicCsvColumns, validatePublicLibraryBundle } from "./lib/library.mjs";
 
 export function collectionIsDue(snapshot, now = new Date(), csv) {
   try {
@@ -9,7 +9,7 @@ export function collectionIsDue(snapshot, now = new Date(), csv) {
     // The pinned Python export ends each row with the batch metadata. Check
     // the exact collected_at cell without counting quoted multiline records
     // or introducing a second CSV parser/serializer in the application.
-    const header = csv.slice(1, csv.indexOf("\r\n")).split(",");
+    const header = publicCsvColumns(csv);
     if (header.at(-2) !== "collected_at" || header.at(-1) !== "collection_status"
         || !csv.includes(`,${snapshot.collected_at},success\r\n`)) return true;
   } catch {
