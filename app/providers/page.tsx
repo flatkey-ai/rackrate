@@ -6,6 +6,7 @@ import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
+import { priceRegionCoverage } from "@/lib/offer-comparison";
 
 export const metadata: Metadata = {
   title: "GPU cloud providers compared",
@@ -44,14 +45,14 @@ export default async function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>Compare nine tracked providers: Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda and Microsoft Azure. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey’s separate commercial profile and quote links are not competitor prices. Comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
+          <p>These providers have numeric per-GPU hourly quotes tied to a published country and region. Provider and offer counts use this comparable set; the complete collection is retained in the source audit. Member and Spot conditions remain attached to each quote. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below. Flatkey has a separate commercial profile and quote links.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {
             const providerOffers = getOffersForProvider(provider.slug);
             const floor = cheapestComparableOffer(providerOffers);
             const gpuNames = Array.from(new Set(providerOffers.map((offer) => getGpu(offer.gpuSlug)?.shortName).filter(Boolean)));
-            const regionCount = new Set(providerOffers.map((offer) => offer.region)).size;
+            const location = priceRegionCoverage(providerOffers);
             return (
               <article className="directory-card provider-directory-card" key={provider.slug}>
                 <div className="directory-card-meta"><span>{provider.type}</span><span>{provider.hq}</span></div>
@@ -59,7 +60,7 @@ export default async function ProvidersIndexPage() {
                 <p>{provider.summary}</p>
                 <dl className="directory-facts">
                   <div><dt>Billing</dt><dd>{provider.billing}</dd></div>
-                  <div><dt>{provider.slug === "flatkey" ? "Capacity" : "Indexed coverage"}</dt><dd>{provider.slug === "flatkey" ? "Model, quantity and region matched per request" : `${providerOffers.length} offers · ${regionCount} region${regionCount === 1 ? "" : "s"}`}</dd></div>
+                  <div><dt>{provider.slug === "flatkey" ? "Capacity" : "Indexed coverage"}</dt><dd>{provider.slug === "flatkey" ? "Model, quantity and region matched per request" : `${providerOffers.length} offers · ${location.regionCount} price region${location.regionCount === 1 ? "" : "s"}${location.coverageOnlyCount ? ` · ${location.coverageOnlyCount} coverage-only` : ""}`}</dd></div>
                   <div><dt>{provider.slug === "flatkey" ? "Delivery" : "GPUs indexed"}</dt><dd>{provider.slug === "flatkey" ? "Configuration and timing confirmed in the quote" : gpuNames.length ? gpuNames.join(", ") : "No indexed listings"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">

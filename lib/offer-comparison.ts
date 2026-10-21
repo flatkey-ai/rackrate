@@ -1,23 +1,26 @@
 import type { Offer } from "./data";
-import { isRegionSpecificPrice, publishedRegionCodes } from "./region-matching.ts";
+import { isPlatformCoverage, isRegionSpecificPrice, publishedPriceRegionCodes } from "./region-matching.ts";
 import { isAccountSpecificPrice } from "./pricing.ts";
+import { isComparableRegionalOffer } from "./offer-geography.mjs";
 
 export type OfferAudience = "regular" | "member" | "conditional";
 
 export function matchesPriceRegionFilter(offer: Offer, region: string): boolean {
-  const codes = publishedRegionCodes(offer);
-  return region === "all" || (region === "__published" ? codes.length > 0
+  const codes = publishedPriceRegionCodes(offer);
+  return region === "all" || (region === "__coverage" ? isPlatformCoverage(offer) : region === "__published" ? codes.length > 0
     : region === "__unpublished" ? codes.length === 0 : codes.includes(region));
 }
 
 export function priceRegionCoverage(offers: readonly Offer[]) {
   const official = offers.filter((offer) => offer.dataStatus === "official-page");
-  const regional = official.filter((offer) => publishedRegionCodes(offer).length > 0);
+  const regional = official.filter(isRegionSpecificPrice);
+  const coverage = official.filter(isPlatformCoverage);
   return {
     offerCount: regional.length,
     providerCount: new Set(regional.map((offer) => offer.providerSlug)).size,
-    regionCount: new Set(regional.flatMap(publishedRegionCodes)).size,
-    unspecifiedCount: official.length - regional.length,
+    regionCount: new Set(regional.flatMap(publishedPriceRegionCodes)).size,
+    unspecifiedCount: official.length - regional.length - coverage.length,
+    coverageOnlyCount: coverage.length,
   };
 }
 
@@ -111,6 +114,20 @@ export function isLowestPriceCandidate(offer: Offer, requireRegionalPrice = fals
     && offer.quoteStatus === "quoted" && normalizedBasis(offer) === "full_price"
     && !hasAdditionalEligibility(offer)
     && (!requireRegionalPrice || isRegionSpecificPrice(offer));
+}
+
+/** A GPU card prefers a regular on-demand quote. A Spot-only model can show an
+ * actual regular Spot quote, with its own purchase-mode label at the call site.
+ * Never compare the two modes by price or substitute a restricted/member rate. */
+export function directoryHeadlineOffer(offers: readonly Offer[]): Offer | undefined {
+  const eligible = offers.filter((offer) => isComparableRegionalOffer(offer)
+    && isLowestPriceCandidate(offer, true) && offerAudience(offer) === "regular");
+  for (const mode of ["On-demand", "Spot"] as const) {
+    const selected = eligible.filter((offer) => offer.rentalType === mode)
+      .sort((a, b) => a.priceUsdPerGpuUnit! - b.priceUsdPerGpuUnit! || a.id.localeCompare(b.id));
+    if (selected.length) return selected[0];
+  }
+  return undefined;
 }
 
 function lowestOffers(offers: readonly Offer[], audience: "regular" | "member", requireRegionalPrice = false): Offer[] {

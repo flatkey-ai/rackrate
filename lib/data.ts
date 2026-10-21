@@ -1,5 +1,6 @@
 import { cheapestComparableOffer } from "./pricing.ts";
 import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from "./region-matching.ts";
+import { isComparableRegionalOffer } from "./offer-geography.mjs";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
@@ -46,6 +47,7 @@ export type Offer = {
   rawGpuModel?: string;
   rawName?: string;
   rawSku?: string;
+  providerSkuId?: string | null;
   gpuCount: number | null;
   gpuVariant: string | null;
   vramGb: number | null;
@@ -71,6 +73,9 @@ export type Offer = {
   accountScope?: string;
   region: string;
   regions: string[];
+  coverageRegions?: string[];
+  coverageCountries?: string[];
+  capacityRegions?: string[];
   zones: string[];
   geographicScope?: string;
   regionScope?: string;
@@ -78,10 +83,15 @@ export type Offer = {
   locationSource?: Record<string, unknown> | null;
   computeCountries?: string[];
   priceScope?: string | null;
+  regionPriceVerified?: boolean;
+  sourceSnapshotAt?: string | null;
+  effectiveFrom?: string | null;
+  effectiveUntil?: string | null;
   countryCode: string;
   availability: Availability;
   egress: string;
   sourceUrl: string;
+  apiSourceUrl?: string | null;
   observedAt: string;
   sourceCurrency: string;
   billingUnit: "GPU-hour" | "GPU-month";
@@ -450,10 +460,11 @@ export const regions: RegionProfile[] = [
 export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies by listing" : `${gpu.vramGb} GB ${gpu.memoryType}`;
 
 export function createPricingData(dataset: PricingDataset) {
-  // Historical snapshots remain intact. The current board only projects
-  // source-backed offers from the nine explicitly tracked competitors.
-  const currentOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
+  // Keep the complete source collection for audit/status. Only complete numeric
+  // country-and-region-bound GPU-hour quotes reach the current comparison.
+  const collectedOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
     && offer.dataStatus === "official-page");
+  const currentOffers = collectedOffers.filter(isComparableRegionalOffer);
   const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
   const currentProviderSlugs = new Set(currentOffers.map((offer) => offer.providerSlug));
   const gpuCatalog = new Map(curatedGpus.filter((gpu) => currentGpuSlugs.has(gpu.slug)).map((gpu) => [gpu.slug, gpu]));
@@ -544,23 +555,28 @@ export function createPricingData(dataset: PricingDataset) {
   // Public health metadata only. No process configuration or credentials are exposed.
   const pricingDatasetStatus = {
     schemaVersion: 1,
+    comparisonScope: "regional-gpu-hour",
     generatedAt: dataset.generatedAt,
     collector: dataset.collector ?? null,
     libraryCoverage: { totals: dataset.coverage?.totals ?? null },
     fx: dataset.fx ? { rateDate: dataset.fx.rateDate, sourceName: dataset.fx.sourceName, sourceUrl: dataset.fx.sourceUrl, observedAt: dataset.fx.observedAt } : null,
     counts: {
-      offers: offers.length,
-      officialOffers: offers.filter((offer) => offer.dataStatus === "official-page").length,
-      referenceOffers: offers.filter((offer) => offer.dataStatus === "seed").length,
-      offlineOffers: offers.filter((offer) => offer.availability === "unavailable").length,
-      contactSalesOffers: offers.filter((offer) => offer.quoteStatus === "contact_sales").length,
+      offers: collectedOffers.length,
+      totalCollectedOffers: collectedOffers.length,
+      comparableOffers: offers.length,
+      excludedFromComparison: collectedOffers.length - offers.length,
+      officialOffers: collectedOffers.length,
+      referenceOffers: 0,
+      offlineOffers: collectedOffers.filter((offer) => offer.availability === "unavailable").length,
+      contactSalesOffers: collectedOffers.filter((offer) => offer.quoteStatus === "contact_sales").length,
     },
     sources: offerDatasetSources.map((source) => ({ provider: source.provider, status: source.status, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
-    providerCounts: Object.fromEntries([...new Set(offers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, offers.filter((offer) => offer.providerSlug === provider).length])),
+    providerCounts: Object.fromEntries([...new Set(collectedOffers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, collectedOffers.filter((offer) => offer.providerSlug === provider).length])),
+    comparableProviderCounts: Object.fromEntries([...new Set(offers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, offers.filter((offer) => offer.providerSlug === provider).length])),
   };
 
   return {
-    offers, gpus, providers, regions,
+    offers, collectedOffers, gpus, providers, regions,
     generatedAt: dataset.generatedAt, sources: offerDatasetSources,
     offerDatasetGeneratedAt, offerDatasetSources,
     getGpu, getProvider, getOffersForGpu, getOffersForProvider,

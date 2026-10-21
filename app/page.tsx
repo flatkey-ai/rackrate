@@ -7,6 +7,7 @@ import { FxDisclosure } from "@/components/fx-disclosure";
 import { PricingRefresh } from "@/components/pricing-refresh";
 import { gpuMemoryLabel } from "@/lib/data";
 import { formatBenchmarkPrice, summaryConfigurationLabel } from "@/lib/pricing";
+import { directoryHeadlineOffer } from "@/lib/offer-comparison";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 
 export default async function Home() {
@@ -25,7 +26,7 @@ export default async function Home() {
           <div className="hero-copy">
             <div className="hero-kicker"><span>{providers.length} platforms</span>Official pricing sources</div>
             <h1>Compare GPU<br /><em>rental prices.</em></h1>
-            <p>Find published rates by GPU model. Check each quote’s region, configuration and terms.</p>
+            <p>Compare numeric prices per GPU-hour, each tied to a published country and region. Check configuration and purchase terms.</p>
             <div className="hero-actions">
               <Link className="button button-primary" href="#prices">Compare prices <span>↓</span></Link>
               <Link className="button button-secondary" href="/methodology">How we collect prices <span>→</span></Link>
@@ -45,7 +46,7 @@ export default async function Home() {
             <div className="terminal-stats">
               <div><span>Platforms</span><strong>{providers.length}</strong></div>
               <div><span>GPU models</span><strong>{gpus.length}</strong></div>
-              <div><span>Collected quotes</span><strong>{offers.length}</strong></div>
+              <div><span>Regional hourly quotes</span><strong>{offers.length}</strong></div>
             </div>
           </div>
         </div>
@@ -63,13 +64,13 @@ export default async function Home() {
         <div className="gpu-grid home-gpu-grid">
           {gpus.slice(0, 8).map((gpu, index) => {
             const listings = getOffersForGpu(gpu.slug);
-            const cheapest = getCheapestOffer(gpu.slug);
+            const cheapest = directoryHeadlineOffer(listings);
             return (
               <Link href={`/gpus/${gpu.slug}`} className="gpu-card" key={gpu.slug}>
                 <div className="gpu-card-top"><span>{String(index + 1).padStart(2, "0")}</span><span className="tier-tag">{gpu.tier}</span></div>
                 <h3>{gpu.shortName}</h3>
                 <p>{gpuMemoryLabel(gpu)}</p>
-                <div className="gpu-card-bottom"><span>On-demand <strong>{formatBenchmarkPrice(cheapest)}</strong><br />/ GPU-hour</span><span>{listings.length} quotes ↗</span></div>
+                <div className="gpu-card-bottom"><span>{cheapest ? <>{cheapest.rentalType} <strong>{formatBenchmarkPrice(cheapest)}</strong><br />/ GPU-hour</> : "See published hourly rates"}</span><span>{listings.length} quotes ↗</span></div>
               </Link>
             );
           })}
@@ -85,7 +86,7 @@ export default async function Home() {
           <div className="home-provider-directory">
             {providers.map((provider) => (
               <Link href={`/providers/${provider.slug}`} className="home-provider-link" key={provider.slug}>
-                <span className="provider-name">{provider.name}<small>{getOffersForProvider(provider.slug).length} collected quotes</small></span>
+                <span className="provider-name">{provider.name}<small>{getOffersForProvider(provider.slug).length} regional hourly quotes</small></span>
                 <span className="provider-arrow">↗</span>
               </Link>
             ))}

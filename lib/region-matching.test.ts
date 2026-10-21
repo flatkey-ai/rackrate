@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPricingData, type Offer, type PricingDataset } from "./data.ts";
-import { getOfferCountryCodes, isRegionSpecificPrice, matchesCountryRegionSelection, offerMatchesRegion, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection, regionMappingSources } from "./region-matching.ts";
+import { getOfferCountryCodes, isRegionSpecificPrice, matchesCountryRegionSelection, offerLocationLabel, offerMatchesRegion, platformCoverageCodes, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection, regionMappingSources } from "./region-matching.ts";
 import { cheapestComparableOffer } from "./pricing.ts";
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
@@ -9,11 +9,13 @@ const quote = (overrides: Partial<Offer> = {}): Offer => ({
   pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand",
   region: "canadacentral", regions: ["canadacentral"], zones: [], countryCode: "", availability: "unknown",
   egress: "Not published", sourceUrl: "https://example.com/pricing", observedAt: "2026-10-21T03:00:00Z",
-  sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
+  sourceAmount: "2", sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
 });
 
 const dataset = (offers: Offer[]): PricingDataset => ({
-  schemaVersion: 2, generatedAt: "2026-10-21T03:00:00Z", offers, sources: [],
+  schemaVersion: 2, generatedAt: "2026-10-21T03:00:00Z", offers: offers.map((offer) => ({
+    ...offer, priceScope: offer.priceScope ?? "regional_quote", computeCountries: offer.computeCountries ?? getOfferCountryCodes(offer),
+  })), sources: [],
 });
 
 test("a source cloud-region code is indexed only within its own provider", () => {
@@ -45,14 +47,14 @@ test("unknown catalog locations are never classified by headquarters, currency o
   assert.deepEqual(data.getOffersForRegion("global"), []);
 });
 
-test("offline China records remain in the country board without becoming a rentable price floor", () => {
+test("offline monthly China records remain in audit without becoming an hourly regional quote", () => {
   const offline = quote({ providerSlug: "ucloud", region: "cn-wlcb", regions: ["cn-wlcb"], zones: ["cn-wlcb-01"], countryCode: "CN", availability: "unavailable", rentalType: "Monthly", billingUnit: "GPU-month", pricePerGpuHour: null });
   const data = createPricingData(dataset([offline]));
-  assert.deepEqual(data.getOffersForRegion("china").map((offer) => offer.id), ["regional"]);
-  assert.deepEqual(data.getRegionCoverage("china"), { offerCount: 1, officialCount: 1, referenceCount: 0, offlineCount: 1, regionalPriceCount: 1, coverageOnlyCount: 0 });
+  assert.deepEqual(data.getOffersForRegion("china"), []);
+  assert.deepEqual(data.getRegionCoverage("china"), { offerCount: 0, officialCount: 0, referenceCount: 0, offlineCount: 0, regionalPriceCount: 0, coverageOnlyCount: 0 });
   assert.equal(data.getCheapestOffer(), undefined);
   assert.deepEqual(getOfferCountryCodes(offline), ["CN"]);
-  assert.deepEqual(data.getOffersForRegion("china")[0].zones, ["cn-wlcb-01"]);
+  assert.deepEqual(data.collectedOffers[0].zones, ["cn-wlcb-01"]);
 });
 
 test("region coverage includes official code-only listings and keeps countries distinct", () => {
@@ -92,17 +94,17 @@ test("platform availability codes do not turn a generic catalog rate into a regi
   const regional = quote({ id: "regional-retail-rate", providerSlug: "ucloud", countryCode: "SE", region: "test-se", regions: ["test-se"] });
   const data = createPricingData(dataset([coverage, regional]));
   const europeanOffers = data.getOffersForRegion("europe");
-  assert.equal(europeanOffers.length, 2);
+  assert.deepEqual(europeanOffers.map((offer) => offer.id), ["regional-retail-rate"]);
   assert.equal(isRegionSpecificPrice(coverage), false);
   assert.equal(isRegionSpecificPrice(regional), true);
   assert.equal(isRegionSpecificPrice(quote({ region: "Not published", regions: [] })), false);
   assert.equal(isRegionSpecificPrice(quote({ region: "Global", regions: ["Global"] })), false);
   assert.equal(isRegionSpecificPrice(quote({ dataStatus: "seed" })), false);
-  assert.equal(cheapestComparableOffer(europeanOffers)?.id, "generic-platform-rate");
+  assert.equal(cheapestComparableOffer(europeanOffers)?.id, "regional-retail-rate");
   assert.equal(cheapestComparableOffer(europeanOffers.filter(isRegionSpecificPrice))?.id, "regional-retail-rate");
   assert.equal(data.getRegionCoverage("europe").regionalPriceCount, 1);
-  assert.equal(data.getRegionCoverage("europe").coverageOnlyCount, 1);
-  assert.deepEqual(getOfferCountryCodes(coverage), ["FI"]);
+  assert.equal(data.getRegionCoverage("europe").coverageOnlyCount, 0);
+  assert.deepEqual(getOfferCountryCodes(coverage), []);
 });
 
 test("dated regional references are absent from the current regional comparison", () => {
@@ -117,6 +119,8 @@ test("explicit library price scope governs country and regional-price claims", (
   assert.equal(isRegionSpecificPrice(coverage), false);
   assert.deepEqual(getOfferCountryCodes(coverage), []);
   assert.equal(matchesCountryRegionSelection(coverage, "FI", "eu-north1"), false);
+  assert.equal(matchesCountryRegionSelection(coverage, "all", "eu-north1"), false);
+  assert.deepEqual(publishedRegionsForCountry(coverage, "all"), []);
   assert.equal(offerMatchesRegion(coverage, { countryCodes: ["FI"], regionNames: ["eu-north1"] }), false);
   const regional = quote({ providerSlug: "ucloud", region: "cn-wlcb", regions: ["cn-wlcb"],
     countryCode: "", computeCountries: ["CN"], priceScope: "zone_quote",
@@ -125,6 +129,20 @@ test("explicit library price scope governs country and regional-price claims", (
   assert.deepEqual(getOfferCountryCodes(regional), ["CN"]);
   assert.deepEqual(publishedRegionsForCountry(regional, "CN"), ["cn-wlcb"]);
   assert.deepEqual(regionMappingSources([regional]), ["https://api.ucloud.cn/"]);
+});
+
+test("coverage and unknown-price labels preserve evidence without making a country-price claim", () => {
+  const coverage = quote({ providerSlug: "nebius", regions: [], region: "Not published", priceScope: "platform_coverage",
+    coverageRegions: ["eu-north1", "us-central1"], coverageCountries: ["FI", "US"], zones: ["coverage-zone"] });
+  assert.deepEqual(platformCoverageCodes(coverage), ["eu-north1", "us-central1"]);
+  assert.deepEqual(getOfferCountryCodes(coverage), []);
+  assert.deepEqual(publishedRegionsForCountry(coverage, "all"), []);
+  assert.deepEqual(publishedZonesForSelection(coverage, "all", "all"), []);
+  assert.match(offerLocationLabel(coverage, 1), /^Platform coverage: Finland \(eu-north1\) \+1 · not a regional price$/);
+  assert.equal(offerLocationLabel(quote({ priceScope: "unlocated_catalog" })), "Price region unverified");
+  const unknownCode = quote({ region: "vendor-x", regions: ["vendor-x"], priceScope: "regional_quote" });
+  assert.equal(offerLocationLabel(unknownCode), "vendor-x");
+  assert.deepEqual(getOfferCountryCodes(unknownCode), []);
 });
 
 test("country and region selection joins the same code instead of crossing a multi-country catalog record", () => {

@@ -3,7 +3,7 @@ import { Fragment, useRef, useState } from "react";
 import type { Gpu, Offer, Provider } from "@/lib/data";
 import type { OfferComparisonGroup, OfferComparisonBucket } from "@/lib/offer-comparison";
 import { offerAudience, hasAdditionalEligibility, summarizeComparisonGroup } from "@/lib/offer-comparison";
-import { isRegionSpecificPrice, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
+import { offerLocationLabel } from "@/lib/region-matching";
 import { availabilityLabel, billingUnitLabel, cloudTierLabel, formatOfferPrice, isAccountSpecificPrice, priceBasisLabel, summaryConfigurationLabel } from "@/lib/pricing";
 import { OfferDetails } from "./offer-details";
 import styles from "./price-explorer.module.css";
@@ -24,6 +24,7 @@ function OfferTerms({ offer }: { offer: Offer }) {
       {(offer.availability !== "unknown" || offer.dataStatus === "seed") && <span className={`${styles.status} ${offer.availability === "unavailable" ? styles.offline : ""}`} data-availability={offer.dataStatus === "seed" ? "unknown" : offer.availability}>{offer.dataStatus === "seed" ? "Historical reference" : availabilityLabel[offer.availability]}</span>}
       {offer.priceBasis === "gpu_component" && <span className={styles.conditional}>GPU component</span>}
       {offer.quoteStatus === "starting_at" && <span className={styles.conditional}>Starting price</span>}
+      {offer.rentalType === "Spot" && <span className={styles.conditional}>Spot snapshot · interruptible</span>}
     </div>
   </div>;
 }
@@ -49,10 +50,7 @@ function BucketHeading({ bucket }: { bucket: OfferComparisonBucket }) {
 }
 
 function shortLocation(offer: Offer) {
-  const regions = publishedRegionCodes(offer);
-  if (!regions.length) return "Region not listed";
-  const names = regions.slice(0, 2).map((code) => publishedRegionLabel(offer, code)).join(" · ");
-  return `${isRegionSpecificPrice(offer) ? "" : "Coverage only: "}${names}${regions.length > 2 ? ` +${regions.length - 2}` : ""}`;
+  return offerLocationLabel(offer, 2);
 }
 
 function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audience: "regular" | "member"; providers: Map<string, Provider> }) {
@@ -67,7 +65,7 @@ function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audien
     <strong>{formatOfferPrice(offer)}</strong>
     <span className={styles.summaryPlatforms}>{platforms.slice(0, 2).join(" · ")}{platforms.length > 2 ? ` +${platforms.length - 2}` : ""}</span>
     <span className={styles.summaryConfiguration}>{configurations.length === 1 ? configurations[0] : [...tiers, "Different configurations"].join(" · ")}</span>
-    <span className={styles.summaryLocation}>{locations.length === 1 ? locations[0] : "Multiple regions"}</span>
+    <span className={styles.summaryLocation}>{locations.length === 1 ? locations[0] : "Multiple price regions"}</span>
   </div>;
 }
 

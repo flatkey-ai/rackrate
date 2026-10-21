@@ -1,4 +1,5 @@
 import type { Offer, RegionProfile } from "./data";
+import { comparableCountryCodes } from "./offer-geography.mjs";
 
 export const REGION_MAPPING_SOURCES = {
   azure: "https://learn.microsoft.com/en-us/azure/reliability/regions-list",
@@ -48,9 +49,22 @@ type LocatedOffer = Pick<Offer, "providerSlug" | "region" | "regions" | "country
   computeCountries?: string[];
   locationSource?: Record<string, unknown> | null;
   priceScope?: string | null;
+  coverageRegions?: string[];
+  conditions?: string[];
+  dataStatus?: Offer["dataStatus"];
 };
 
 const unpublished = /^(?:not published|unknown|unspecified|n\/?a)$/i;
+const regionalScopes = new Set(["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"]);
+
+export function isPlatformCoverage(offer: Pick<LocatedOffer, "priceScope" | "conditions">): boolean {
+  return offer.priceScope === "platform_coverage" || (!offer.priceScope
+    && Boolean(offer.conditions?.some((condition) => /\bnot a region-specific price quote\b/i.test(condition))));
+}
+
+function hasPriceLocationScope(offer: Pick<LocatedOffer, "priceScope" | "conditions" | "dataStatus">): boolean {
+  return offer.dataStatus !== "seed" && (offer.priceScope ? regionalScopes.has(offer.priceScope) : !isPlatformCoverage(offer));
+}
 
 function mappingFor(provider: string, code: string): RegionMapping | undefined {
   const entries = Object.hasOwn(mappings, provider) ? mappings[provider] : undefined;
@@ -64,22 +78,43 @@ export function publishedRegionCodes(offer: Pick<Offer, "region" | "regions">): 
   return [...new Set(labels.filter((entry) => entry.trim() && !unpublished.test(entry.trim())))];
 }
 
+/** Coverage labels describe the platform footprint, never the rate's location.
+ * Older snapshots stored them in regions; scope still prevents a price claim. */
+export function platformCoverageCodes(offer: LocatedOffer): string[] {
+  if (!isPlatformCoverage(offer)) return [];
+  return publishedRegionCodes({ region: "", regions: offer.coverageRegions ?? offer.regions });
+}
+
+export function publishedPriceRegionCodes(offer: Offer): string[] {
+  return isRegionSpecificPrice(offer) ? publishedRegionCodes(offer) : [];
+}
+
+export function offerLocationLabel(offer: Offer, limit = Infinity): string {
+  const coverage = isPlatformCoverage(offer);
+  const codes = coverage ? platformCoverageCodes(offer) : publishedPriceRegionCodes(offer);
+  if (!codes.length) return coverage ? "Platform coverage · price region unverified" : "Price region unverified";
+  const names = codes.slice(0, limit).map((code) => publishedRegionLabel(offer, code)).join(" · ");
+  const suffix = codes.length > limit ? ` +${codes.length - limit}` : "";
+  const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
+  const countries = comparableCountryCodes(offer).map((code) => countryNames.of(code) ?? code).join(" · ");
+  return coverage ? `Platform coverage: ${names}${suffix} · not a regional price` : `${countries ? `${countries} · ` : ""}${names}${suffix}`;
+}
+
 /** A platform's supported regions do not make its generic catalog rate a quote
  * for each of those regions. Keep coverage discoverable, but out of regional
  * price minima until the source actually binds the rate to a location. */
 export function isRegionSpecificPrice(offer: Pick<Offer, "region" | "regions" | "conditions" | "dataStatus" | "priceScope">): boolean {
-  if (offer.priceScope) return offer.dataStatus === "official-page"
-    && ["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)
-    && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code));
   return offer.dataStatus === "official-page"
-    && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code))
-    && !offer.conditions.some((condition) => /\bnot a region-specific price quote\b/i.test(condition));
+    && hasPriceLocationScope(offer)
+    && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code));
 }
 
 export function getOfferCountryCodes(offer: LocatedOffer): string[] {
-  if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return [];
-  const explicit = /^[A-Z]{2}$/.test(offer.countryCode) && !["EU", "GL"].includes(offer.countryCode) ? [offer.countryCode] : [];
-  const declared = (offer.computeCountries ?? []).filter((code) => /^[A-Z]{2}$/.test(code) && !["EU", "GL"].includes(code));
+  if (!hasPriceLocationScope(offer)) return [];
+  const legacyGlobal = !offer.priceScope;
+  const isCountry = (code: string) => /^[A-Z]{2}$/.test(code) && code !== "EU" && (!legacyGlobal || code !== "GL");
+  const explicit = isCountry(offer.countryCode) ? [offer.countryCode] : [];
+  const declared = (offer.computeCountries ?? []).filter(isCountry);
   const mapped = publishedRegionCodes(offer).flatMap((code) => {
     const country = mappingFor(offer.providerSlug, code)?.country;
     return country ? [country] : [];
@@ -92,10 +127,11 @@ export function getOfferCountryCodes(offer: LocatedOffer): string[] {
  * An explicitly published whole-record country can resolve unmapped codes only
  * when none of the record's documented codes contradict that country. */
 export function publishedRegionsForCountry(offer: LocatedOffer, country: string): string[] {
+  if (!hasPriceLocationScope(offer)) return [];
   const codes = publishedRegionCodes(offer);
   if (country === "all") return codes;
   const explicit = (offer.countryCode === country || (offer.computeCountries?.length === 1 && offer.computeCountries[0] === country))
-    && !["EU", "GL"].includes(country);
+    && country !== "EU" && (country !== "GL" || Boolean(offer.priceScope));
   const explicitIsConsistent = explicit && codes.every((code) => {
     const mapped = mappingFor(offer.providerSlug, code)?.country;
     return mapped === undefined || mapped === country;
@@ -111,7 +147,7 @@ export function publishedRegionsForCountry(offer: LocatedOffer, country: string)
  * country on this same provider's source record. */
 export function matchesCountryRegionSelection(offer: LocatedOffer, country: string, region: string): boolean {
   if (country !== "all" && !getOfferCountryCodes(offer).includes(country)) return false;
-  if (["all", "__published", "__unpublished"].includes(region)) return true;
+  if (["all", "__published", "__unpublished", "__coverage"].includes(region)) return true;
   return publishedRegionsForCountry(offer, country).includes(region);
 }
 
@@ -120,14 +156,15 @@ export function matchesCountryRegionSelection(offer: LocatedOffer, country: stri
  * single-region UCloud records). Partial multi-region selections cannot borrow
  * the unassigned zones from another country or region. */
 export function publishedZonesForSelection(offer: LocatedOffer & Pick<Offer, "zones">, country: string, region: string): string[] {
+  if (!hasPriceLocationScope(offer)) return [];
   if (!matchesCountryRegionSelection(offer, country, region)) return [];
-  const concreteRegion = !["all", "__published", "__unpublished"].includes(region);
+  const concreteRegion = !["all", "__published", "__unpublished", "__coverage"].includes(region);
   const selected = concreteRegion ? [region] : publishedRegionsForCountry(offer, country);
   return publishedRegionCodes(offer).every((code) => selected.includes(code)) ? [...offer.zones] : [];
 }
 
 export function offerMatchesRegion(offer: LocatedOffer, region: Pick<RegionProfile, "countryCodes" | "regionNames">): boolean {
-  if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return false;
+  if (!hasPriceLocationScope(offer)) return false;
   if (offer.countryCode && region.countryCodes.includes(offer.countryCode)) return true;
   const codes = publishedRegionCodes(offer);
   if (region.regionNames.includes(offer.region) || codes.some((code) => region.regionNames.includes(code))) return true;

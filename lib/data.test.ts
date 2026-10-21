@@ -4,9 +4,9 @@ import { COMPETITOR_PROVIDER_SLUGS, createPricingData, prioritizeGpuCatalog, typ
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "public-example-hourly", gpuSlug: "nvidia-h100", providerSlug: "nebius", gpuCount: null, gpuVariant: "PCIe", vramGb: 80,
-  pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "Not published", regions: [], zones: [], countryCode: "",
+  pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "eu-north1", regions: ["eu-north1"], zones: [], countryCode: "FI", computeCountries: ["FI"], priceScope: "regional_quote",
   availability: "unknown", egress: "Not published", sourceUrl: "https://example.com/prices", observedAt: "2026-10-20T08:00:00Z",
-  sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
+  sourceAmount: "2", sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
 });
 const dataset = (overrides: Partial<PricingDataset> = {}): PricingDataset => ({
   schemaVersion: 2, generatedAt: "2026-10-20T08:00:00Z", offers: [quote()],
@@ -83,14 +83,41 @@ test("all nine current competitors appear only when the snapshot contains their 
   assert.equal(current.getOffersForProvider("runpod").length, 1);
   assert.equal(current.getOffersForProvider("azure").length, 1);
 });
-test("status and filters use the same original-currency monthly snapshot", () => {
+test("monthly source records remain in audit/status and never reach any hourly comparison", () => {
   const monthly = quote({ id: "monthly", sourceCurrency: "CNY", billingUnit: "GPU-month", pricePerGpuUnit: 100, priceUsdPerGpuUnit: 15, pricePerGpuHour: null, availability: "unavailable", rentalType: "Monthly", regions: ["United States", "Finland"], region: "United States, Finland" });
   const data = createPricingData(dataset({ offers: [monthly] }));
-  assert.equal(data.offers[0].pricePerGpuUnit, 100);
-  assert.equal(data.offers[0].priceUsdPerGpuUnit, 15);
-  assert.equal(data.offers[0].pricePerGpuHour, null);
+  assert.deepEqual(data.offers, []);
+  assert.equal(data.collectedOffers[0].pricePerGpuUnit, 100);
+  assert.equal(data.collectedOffers[0].priceUsdPerGpuUnit, 15);
+  assert.equal(data.collectedOffers[0].pricePerGpuHour, null);
   assert.equal(data.getCheapestOffer(), undefined);
   assert.equal(data.pricingDatasetStatus.counts.offlineOffers, 1);
-  assert.deepEqual(data.getOffersForRegion("united-states").map((offer) => offer.id), ["monthly"]);
-  assert.deepEqual(data.getOffersForRegion("europe").map((offer) => offer.id), ["monthly"]);
+  assert.equal(data.pricingDatasetStatus.counts.totalCollectedOffers, 1);
+  assert.equal(data.pricingDatasetStatus.counts.comparableOffers, 0);
+  assert.equal(data.pricingDatasetStatus.counts.excludedFromComparison, 1);
+  assert.deepEqual(data.gpus, []);
+  assert.deepEqual(data.providers, []);
+  assert.deepEqual(data.getOffersForRegion("united-states"), []);
+  assert.deepEqual(data.getOffersForRegion("europe"), []);
+});
+
+test("all website directories and stats project only complete regional numeric hourly quotes", () => {
+  const valid = quote();
+  const excluded = [
+    quote({ id: "unlocated", providerSlug: "lambda", gpuSlug: "nvidia-a100", priceScope: "unlocated_catalog" }),
+    quote({ id: "coverage", providerSlug: "crusoe", gpuSlug: "nvidia-a100", priceScope: "platform_coverage", coverageRegions: ["eu-north1"] }),
+    quote({ id: "country-missing", countryCode: "", computeCountries: [] }),
+    quote({ id: "region-unverified", regionPriceVerified: false }), quote({ id: "from", quoteStatus: "starting_at" }),
+    quote({ id: "component", priceBasis: "gpu_component" }),
+  ];
+  const input = dataset({ offers: [valid, ...excluded] }), before = JSON.stringify(input), current = createPricingData(input);
+  assert.deepEqual(current.offers.map((offer) => offer.id), [valid.id]);
+  assert.deepEqual(current.providers.map((provider) => provider.slug), ["nebius"]);
+  assert.deepEqual(current.gpus.map((gpu) => gpu.slug), ["nvidia-h100"]);
+  assert.equal(current.collectedOffers.length, 7);
+  assert.equal(current.pricingDatasetStatus.counts.offers, 7);
+  assert.equal(current.pricingDatasetStatus.counts.comparableOffers, 1);
+  assert.deepEqual(current.pricingDatasetStatus.comparableProviderCounts, { nebius: 1 });
+  assert.deepEqual(current.pricingDatasetStatus.providerCounts, { crusoe: 1, lambda: 1, nebius: 5 });
+  assert.equal(JSON.stringify(input), before);
 });

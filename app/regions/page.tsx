@@ -48,7 +48,7 @@ export default async function RegionsIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Indexed markets</span><h2>Regional price signals, with their limits visible.</h2></div>
-          <p>Markets group listings by their published country or documented provider-region code. Regional prices and platform coverage are counted separately. A platform's supported regions do not establish a price for each location, and platform coverage rates never set a regional benchmark.</p>
+          <p>Markets group numeric per-GPU hourly prices bound to a published country and region. Unverified locations, platform coverage references, starting prices and monthly packages are excluded from every comparison table.</p>
         </div>
         <div className="region-grid">
           {regions.filter((region) => getRegionCoverage(region.slug).offerCount > 0).map((region, index) => {

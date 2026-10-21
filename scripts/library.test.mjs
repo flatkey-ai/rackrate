@@ -7,6 +7,7 @@ import {
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
+import { buildCompactPriceTable } from "./lib/compact-csv.mjs";
 
 const observedAt = "2026-10-20T08:00:00Z";
 const rates = parseEcbRates(`<gesmes:Envelope xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref"><gesmes:name>European Central Bank</gesmes:name><Cube><Cube time='2026-10-19'><Cube currency='USD' rate='1.2'/><Cube currency='CNY' rate='8'/><Cube currency='ILS' rate='4'/></Cube></Cube></gesmes:Envelope>`, { observedAt });
@@ -231,7 +232,7 @@ test("Python bundle serializes the same single collection with the library CSV e
   assert.deepEqual(result.result, expected.result);
   assert.equal(result.csv, bilingualFixtureCsv);
   assert.equal((PYTHON_BUNDLE_COLLECTION_CODE.match(/result = collect_prices\(/g) ?? []).length, 1);
-  assert.ok(PYTHON_BUNDLE_COLLECTION_CODE.includes("prices_to_csv(result)"));
+  assert.ok(PYTHON_BUNDLE_COLLECTION_CODE.includes('prices_to_csv(result, profile="full")'));
   assert.ok(!PYTHON_BUNDLE_COLLECTION_CODE.includes("from_env"));
   await assert.rejects(collectPublicLibraryBundle({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
 });
@@ -298,6 +299,26 @@ test("platform coverage cannot supply a country-price label even when old locati
   assert.deepEqual(row.regions, ["eu-north1"]);
 });
 
+test("regional Spot prices preserve country, effective time and public/API provenance separately", () => {
+  const result = fixture();
+  Object.assign(result.prices[0], { regions: ["me-west1"], compute_countries: ["IL"],
+    price_scope: "regional_quote", region_price_verified: true, billing_mode: "spot",
+    source_url: "https://api.nebius.cloud/billing/v1alpha1/spot-price", public_url: "https://nebius.com/spot-prices",
+    effective_from: "2026-10-20T07:45:00Z", source_snapshot_at: "2026-10-20T07:59:00Z",
+    provider_sku_id: "sku-example",
+    coverage_regions: [], coverage_countries: [] });
+  const row = normalizeLibraryResult(result).offers[0];
+  assert.equal(row.countryCode, "IL");
+  assert.equal(row.regionPriceVerified, true);
+  assert.equal(row.rentalType, "Spot");
+  assert.equal(row.sourceUrl, "https://nebius.com/spot-prices");
+  assert.equal(row.apiSourceUrl, result.prices[0].source_url);
+  assert.equal(row.effectiveFrom, result.prices[0].effective_from);
+  assert.equal(row.sourceSnapshotAt, result.prices[0].source_snapshot_at);
+  assert.equal(row.providerSkuId, "sku-example");
+  assert.deepEqual(row.coverageRegions, []);
+});
+
 test("USD conversion preserves native prices and periods and requires matching provenance", () => {
   const result = fixture();
   Object.assign(result.prices[3], { amount: "80", currency: "CNY", unit: "gpu_month", billing_mode: "monthly", availability: "offline" });
@@ -350,6 +371,8 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   const files = new Map();
   const publications = [];
   const result = fixture();
+  Object.assign(result.prices[0], { regions: ["us-central1"], compute_countries: ["US"],
+    price_scope: "regional_quote", region_price_verified: true, billing_mode: "spot" });
   await refreshPrices({
     directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
     collect: async () => bundle(result),
@@ -359,7 +382,13 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
   assert.equal(files.get("/example/data/public-prices.csv.tmp"), bilingualFixtureCsv);
+  assert.ok(files.get("/example/data/prices.csv.tmp").startsWith("\uFEFFGPU型号/规格,平台,国家/地区,"));
+  assert.ok(files.get("/example/data/prices.csv.tmp").endsWith("\r\n"));
+  assert.ok(files.get("/example/data/prices.csv.tmp").includes("us-central1"));
+  assert.ok(!files.get("/example/data/prices.csv.tmp").includes("未公布"));
+  assert.equal(buildCompactPriceTable(files.get("/example/data/offers.json.tmp")).rows.length, 1);
   assert.ok(publications.some(([, to]) => to === "/example/data/public-prices.csv"));
+  assert.ok(publications.some(([, to]) => to === "/example/data/prices.csv"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].sourceCurrency, "USD");

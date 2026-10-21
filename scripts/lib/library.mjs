@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.10.0";
-export const LIBRARY_COMMIT = "48d6a75d2a39c7da2627c52aa2a8d8477a2d7b5e";
+export const LIBRARY_VERSION = "0.11.0";
+export const LIBRARY_COMMIT = "3dac05148ecfc486011ec257e2104cca6dcf8ef5";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -48,7 +48,7 @@ print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
 export const PYTHON_BUNDLE_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
 from gpu_price_monitor import prices_to_csv
-print(json.dumps({"result": result, "csv": prices_to_csv(result)}, ensure_ascii=False, allow_nan=False))
+print(json.dumps({"result": result, "csv": prices_to_csv(result, profile="full")}, ensure_ascii=False, allow_nan=False))
 `;
 
 async function readPublicPython(program, {
@@ -286,6 +286,7 @@ export function normalizeLibraryResult(result) {
     return {
       id: stableId(quote), gpuSlug, providerSlug: quote.provider, gpuModel: family,
       rawGpuModel: quote.gpu_model, rawName: quote.raw_name ?? null, rawSku: quote.raw_sku ?? null,
+      providerSkuId: quote.provider_sku_id ?? quote.azure_meter?.sku_id ?? null,
       gpuVariant: quote.gpu_variant ?? null, vramGb: quote.vram_gb ?? null,
       gpuCount: quote.gpu_count,
       ...(Number.isFinite(resources.vcpus ?? resources.vcpu_count) ? { vcpu: resources.vcpus ?? resources.vcpu_count } : {}),
@@ -309,10 +310,15 @@ export function normalizeLibraryResult(result) {
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
       countryCode, computeCountries, location: quote.location ?? null,
       priceScope: quote.price_scope ?? null, locationSource: quote.location_source ?? null,
+      regionPriceVerified: quote.region_price_verified ?? null,
+      coverageRegions: strings(quote.coverage_regions ?? [], "coverage regions"),
+      coverageCountries: strings(quote.coverage_countries ?? [], "coverage countries"),
       availability, sourceAvailability: rawAvailability,
-      egress: "Not published", sourceUrl: quote.source_url,
+      egress: "Not published", sourceUrl: quote.public_url ?? quote.source_url,
+      apiSourceUrl: quote.public_url ? quote.source_url : null,
       sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
       effectiveFrom: quote.effective_from ?? null, effectiveUntil: quote.effective_until ?? null,
+      sourceSnapshotAt: quote.source_snapshot_at ?? null,
       accountScope: quote.account_scope ?? "unspecified", taxScope: quote.tax_scope ?? "unspecified",
       productType: quote.product_type, conditions: conditionsFor(quote),
       dataStatus: "official-page", sourceQuoteIndex: index,
@@ -379,6 +385,7 @@ export function buildRackRateDataset(_current, libraryResult) {
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
+        additionalUrls: source.additional_source_urls ?? [],
         status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
     ],
     offers,

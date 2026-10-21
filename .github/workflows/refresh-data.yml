@@ -64,8 +64,8 @@ jobs:
       - name: Commit verified dataset
         if: github.ref == 'refs/heads/main' && steps.due.outputs.collect == 'true'
         run: |
-          git add data/offers.json data/price-history.json data/public-prices.json data/public-prices.csv data/fx-rates.json
-          if git diff --cached --quiet -- data/offers.json data/price-history.json data/public-prices.json data/public-prices.csv data/fx-rates.json; then
+          git add data/offers.json data/price-history.json data/public-prices.json data/public-prices.csv data/prices.csv data/fx-rates.json
+          if git diff --cached --quiet -- data/offers.json data/price-history.json data/public-prices.json data/public-prices.csv data/prices.csv data/fx-rates.json; then
             echo "No pricing changes"
             exit 0
           fi
@@ -85,5 +85,6 @@ jobs:
             data/offers.json
             data/public-prices.json
             data/public-prices.csv
+            data/prices.csv
             data/fx-rates.json
           retention-days: 7

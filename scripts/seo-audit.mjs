@@ -50,9 +50,11 @@ if (!home.includes('"@type":"Organization"') || !home.includes('"@type":"WebSite
 const blog = await read(`${baseUrl}/blog`);
 if (blog.response.status !== 404) failures.push(`paused RackRate blog must return 404, received ${blog.response.status}`);
 
-const thinRegion = await read(`${baseUrl}/regions/canada`);
+// The strict comparison excludes unlocated/global catalog records. A real
+// country such as Canada can gain enough regional quotes to become indexable.
+const thinRegion = await read(`${baseUrl}/regions/global`);
 const thinRobots = value(thinRegion.text, /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']+)["']/i);
-if (!/noindex/i.test(thinRobots)) failures.push("thin Canada region page must remain noindex");
+if (!/noindex/i.test(thinRobots)) failures.push("the unlocated global catalog must remain noindex");
 
 if (failures.length) {
   console.error(`SEO audit failed for ${baseUrl}:\n- ${failures.join("\n- ")}`);

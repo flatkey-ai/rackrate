@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Offer } from "@/lib/data";
 import { availabilityLabel, billingUnitLabel, cloudTierLabel, isAccountSpecificPrice, priceBasisLabel } from "@/lib/pricing";
 import { offerAudience } from "@/lib/offer-comparison";
-import { getOfferCountryCodes, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
+import { getOfferCountryCodes, isRegionSpecificPrice, publishedPriceRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
 
 type PublicOfferDetails = Offer & {
   promotion?: Record<string, unknown> | null;
@@ -35,7 +35,7 @@ function timestamp(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime())
-    ? `${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(parsed)} China time`
+    ? `${new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "medium", timeZone: "Asia/Shanghai" }).format(parsed)} China time`
     : value;
 }
 function DetailList({ items }: { items: DetailItem[] }) {
@@ -109,12 +109,13 @@ export function OfferDetails({ offer }: { offer: Offer }) {
     price.push(["Exchange rate", <>1 {offer.sourceCurrency} = {offer.fx.rateToUsdDecimal ?? offer.fx.rateToUsd} USD<br /><a href={offer.fx.sourceUrl} target="_blank" rel="nofollow noreferrer">ECB · {offer.fx.rateDate} ↗</a></>]);
   }
 
-  const regions = publishedRegionCodes(offer);
-  const zones = offer.zones ?? [];
-  const platformCoverage = offer.priceScope === "platform_coverage";
-  const terms: DetailItem[] = [[platformCoverage ? "Platform coverage" : "Region", regions.length
-    ? `${regions.map((region) => publishedRegionLabel(offer, region)).join(" · ")}${platformCoverage ? " · rate not verified by region" : ""}`
-    : "Not listed"]];
+  const zones = isRegionSpecificPrice(offer) ? offer.zones ?? [] : [];
+  const countries = getOfferCountryCodes(offer);
+  const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
+  const terms: DetailItem[] = [
+    ["Price country", countries.map((code) => `${countryNames.of(code) ?? code} (${code})`).join(" · ")],
+    ["Price region", publishedPriceRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ")],
+  ];
   if (zones.length) terms.push(["Zone", zones.join(" · ")]);
   const audience = offerAudience(offer);
   const tier = isAccountSpecificPrice(offer) ? (/contract/i.test(offer.accountScope ?? "") ? "Account contract quote" : "Account-specific quote")
@@ -136,8 +137,6 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   if (published.pricingProductScope?.length) additional.push(["Applicable products", published.pricingProductScope.join(" · ")]);
   if (published.billingMeter) additional.push(["Billing meter", published.billingMeter]);
   if (Array.isArray(resources.disks) && resources.disks.length) additional.push(["Disks", sourceValue(resources.disks)]);
-  const countries = getOfferCountryCodes(offer);
-  if (countries.length) additional.push(["Country codes", countries.join(" · ")]);
   const locationSource = offer.locationSource?.source_url ?? offer.locationSource?.api_url ?? offer.locationSource?.url;
   if (typeof locationSource === "string" && /^https?:\/\//.test(locationSource)) {
     additional.push(["Country mapping", <a href={locationSource} target="_blank" rel="nofollow noreferrer">Official location directory ↗</a>]);
@@ -149,6 +148,9 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   ];
   if (published.effectiveFrom) source.push(["Effective from", timestamp(published.effectiveFrom)]);
   if (published.effectiveUntil) source.push(["Effective until", timestamp(published.effectiveUntil)]);
+  if (offer.sourceSnapshotAt) source.push(["API earliest sample", timestamp(offer.sourceSnapshotAt)]);
+  if (offer.providerSkuId) source.push(["Provider SKU", offer.providerSkuId]);
+  if (offer.apiSourceUrl) source.push(["Source data", <a href={offer.apiSourceUrl} target="_blank" rel="nofollow noreferrer">Official price API ↗</a>]);
 
   return <div className="quote-detail-grid">
     <section className="quote-detail-section"><h4>Configuration</h4><DetailList items={configuration} /></section>
