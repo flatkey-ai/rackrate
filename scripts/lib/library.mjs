@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.8.0";
-export const LIBRARY_COMMIT = "7347917f9c276734e906ac360ee427c11f9c1ea2";
+export const LIBRARY_VERSION = "0.9.0";
+export const LIBRARY_COMMIT = "67c70ae5da2700f932242de224956f1b203ac539";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -36,27 +36,59 @@ const PROVIDERS = {
 
 // Settings() deliberately bypasses .env and credentials inherited by this process.
 // The library owns collection only; RackRate owns persistence and publication.
-export const PYTHON_COLLECTION_CODE = `
+const PYTHON_COLLECTION_SETUP = `
 import json
 from gpu_price_monitor import Settings, __version__, collect_prices
 if __version__ != "${LIBRARY_VERSION}":
     raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
 result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)
+`;
+export const PYTHON_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
+export const PYTHON_BUNDLE_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
+from gpu_price_monitor import prices_to_csv
+print(json.dumps({"result": result, "csv": prices_to_csv(result)}, ensure_ascii=False, allow_nan=False))
+`;
 
-export async function collectPublicLibrary({
+async function readPublicPython(program, {
   python = collectionPython(),
   exec = execFile,
 } = {}) {
-  const { stdout } = await exec(python, ["-c", PYTHON_COLLECTION_CODE], {
+  const { stdout } = await exec(python, ["-c", program], {
     encoding: "utf8", timeout: 12 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
   });
   let result;
   try { result = JSON.parse(stdout); }
   catch { throw new Error("gpu-price-monitor did not return valid JSON; existing data was preserved"); }
-  validatePublicResult(result);
   return result;
+}
+
+export async function collectPublicLibrary(options = {}) {
+  return validatePublicResult(await readPublicPython(PYTHON_COLLECTION_CODE, options));
+}
+
+export function validatePublicLibraryBundle(bundle) {
+  validatePublicResult(bundle?.result);
+  const csv = bundle.csv;
+  if (typeof csv !== "string" || !csv.startsWith("\uFEFF") || !csv.endsWith("\r\n")) {
+    throw new Error("Public CSV is missing its UTF-8 BOM or CRLF framing; existing data was preserved");
+  }
+  const headerEnd = csv.indexOf("\r\n");
+  const columns = csv.slice(1, headerEnd).split(",");
+  const required = ["provider", "gpu_model", "amount", "currency", "unit", "price_scope", "availability", "observed_at", "collected_at", "collection_status"];
+  if (headerEnd < 0 || headerEnd + 2 === csv.length
+      || new Set(columns).size !== columns.length || columns.some((column) => !/^[a-z][a-z0-9_]*$/.test(column))
+      || required.some((column) => !columns.includes(column))) {
+    throw new Error("Public CSV has no quote rows or an unexpected header; existing data was preserved");
+  }
+  // CSV may contain quoted commas or newlines. Do not count physical lines or
+  // serialize again in JavaScript: Python owns the exact quote projection.
+  return bundle;
+}
+
+export async function collectPublicLibraryBundle(options = {}) {
+  return validatePublicLibraryBundle(await readPublicPython(PYTHON_BUNDLE_COLLECTION_CODE, options));
 }
 
 function timestamp(value, label) {

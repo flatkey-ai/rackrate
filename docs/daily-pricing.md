@@ -4,10 +4,10 @@ Collection is scheduled once each day at **10:30 Asia/Shanghai**, implemented as
 
 ## Cloud execution and publication
 
-1. Check the verified main-branch snapshot. If all nine required sources already completed after today's 10:30 China-time cutoff, skip another collection.
+1. Check the verified main-branch JSON and CSV. If all nine required sources already completed after today's 10:30 China-time cutoff and the matching CSV is present and valid, skip another collection.
 2. When collection is due, install the immutable library revision in `requirements-collector.txt` and its browser dependency. Collect exactly Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda and Microsoft Azure through the anonymous library interface. No additional collector, cloud-provider keys, login state, recharge or GPU provisioning is used.
-3. Read the latest published ECB reference rates anonymously. Validate prices, currencies, billing periods, source identity, geography and FX date. Preserve original amounts and convert only currency; monthly rates stay per month. Save the raw library response, FX snapshot, adapted offers and history.
-4. Run tests, typechecking and a production build before committing the four data files to main. Collection or validation failure leaves the last verified main-branch data intact.
+3. Generate `data/public-prices.csv` with the library's `prices_to_csv(result)` from the same collection as `data/public-prices.json`. CSV preserves native currencies and periods. Read the latest published ECB reference rates anonymously for website USD display. Validate prices, source identity, geography and FX date; monthly rates stay per month. Save CSV, raw JSON, FX snapshot, adapted offers and history.
+4. Run tests, typechecking and a production build before committing these five data files to main. Collection, CSV or validation failure leaves the last verified main-branch data intact. Preserve the CSV in the workflow artifact as well.
 5. The website reads the single self-contained public `main/data/offers.json` file at request time. Source metadata, GPU/provider catalogs and FX belong to that same snapshot; the website does not combine independently fetched main-branch files.
 6. GitHub Actions calls the public status endpoint to warm the server's snapshot, then checks its publication state, exact file SHA-256, timestamps, FX date, source counts and offline/contact-sales counts. It also fetches the homepage and checks its `rackrate-pricing-snapshot` meta marker against that same SHA-256. A run is successful only when both API and page match. This step runs even when duplicate collection was skipped.
 
@@ -49,4 +49,4 @@ Confirm all nine library provider results succeeded and inspect `coverage` for m
 
 Preserve `price_scope`, `compute_countries` and `location_source` in the adapted offer. Only region- or zone-bound quotes support country-price filters and regional minima. A provider's platform coverage remains coverage; it is not expanded into prices in those countries. An offline promotional listing remains offline.
 
-The reusable library remains independently usable through Python and JSON CLI. It contains no RackRate storage, scheduling, publication endpoints or credentials.
+The reusable library remains independently usable through Python and JSON / CSV CLI. It contains no RackRate storage, scheduling, publication endpoints or credentials.

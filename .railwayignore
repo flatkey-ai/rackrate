@@ -10,5 +10,6 @@ docs/
 scripts/
 **/*.test.ts
 data/public-prices.json
+data/public-prices.csv
 data/price-history.json
 data/fx-rates.json

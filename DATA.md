@@ -31,7 +31,7 @@ The library supplies Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcea
 
 New snapshots declare all nine slugs in `collector.providers`. Every required source must succeed before a new collection can replace the published dataset. The reader also accepts the complete prior five-source collector 0.7.0 snapshot during rollout, and verified older bundled snapshots at their original collection times. Historical reference offers and untracked providers remain outside the current board. No historical JSON file is rewritten to imitate a fresh quote.
 
-The raw library response in `data/public-prices.json` retains source URLs, collection timestamps, effective dates, original units and coverage indices. `generatedCatalog` in `data/offers.json` adds source-derived GPU/provider metadata without inventing missing specifications. New adapters belong in the open-source library and need meaningful fixture tests before publication.
+The raw library response in `data/public-prices.json` retains source URLs, collection timestamps, effective dates, original units and coverage indices. The same library result produces `data/public-prices.csv` through `prices_to_csv`, with UTF-8 BOM and CRLF. This reusable CSV keeps native currencies and periods; only RackRate's adapted website dataset adds USD conversions. Both files describe the same batch. `generatedCatalog` in `data/offers.json` adds source-derived GPU/provider metadata without inventing missing specifications. New adapters belong in the open-source library and need meaningful fixture tests before publication.
 
 ## Ranking, corrections, and reuse
 

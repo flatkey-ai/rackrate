@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRackRateDataset, collectPublicLibrary, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
-  PYTHON_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
-  validateOffers,
+  buildRackRateDataset, collectPublicLibrary, collectPublicLibraryBundle, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
+  PYTHON_COLLECTION_CODE, PYTHON_BUNDLE_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
+  validatePublicLibraryBundle, validateOffers,
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
@@ -36,6 +36,19 @@ function fixture(additional = []) {
     },
   };
 }
+// Hand-authored CSV fixture, not an application-side quote serializer. Its
+// embedded comma/newline guards against mistaking physical lines for rows.
+const fixtureCsv = '\uFEFFprovider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,collected_at,collection_status,notes\r\n'
+  + 'nebius,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,"quoted, detail\r\ncontinued"\r\n'
+  + 'crusoe,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'lambda,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'ucloud,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'autodl,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'runpod,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'digitalocean,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'verda,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'azure,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n';
+function bundle(result = fixture()) { return { result, csv: fixtureCsv }; }
 test("the scheduled collector requires exactly all nine selected competitors", () => {
   assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "azure"]);
 });
@@ -201,6 +214,36 @@ test("Python bridge uses explicit public Settings rather than dotenv or process 
   await assert.rejects(collectPublicLibrary({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
 });
 
+test("Python bundle serializes the same single collection with the library CSV exporter", async () => {
+  const expected = bundle();
+  let calls = 0;
+  const result = await collectPublicLibraryBundle({ python: "/custom/python", exec: async (python, args) => {
+    calls++;
+    assert.equal(python, "/custom/python");
+    assert.deepEqual(args, ["-c", PYTHON_BUNDLE_COLLECTION_CODE]);
+    return { stdout: JSON.stringify(expected) };
+  } });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.result, expected.result);
+  assert.equal(result.csv, fixtureCsv);
+  assert.equal((PYTHON_BUNDLE_COLLECTION_CODE.match(/result = collect_prices\(/g) ?? []).length, 1);
+  assert.ok(PYTHON_BUNDLE_COLLECTION_CODE.includes("prices_to_csv(result)"));
+  assert.ok(!PYTHON_BUNDLE_COLLECTION_CODE.includes("from_env"));
+  await assert.rejects(collectPublicLibraryBundle({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
+});
+
+test("bundle rejects missing CSV, empty tables and unexpected headers without line-counting quoted fields", () => {
+  assert.equal(validatePublicLibraryBundle(bundle()).csv, fixtureCsv);
+  for (const csv of [undefined, "", fixtureCsv.slice(1), fixtureCsv.replaceAll("\r\n", "\n"),
+    fixtureCsv.slice(0, fixtureCsv.indexOf("\r\n") + 2), fixtureCsv.replace("price_scope", "location"),
+    fixtureCsv.replace("provider,gpu_model", "provider,provider")]) {
+    assert.throws(() => validatePublicLibraryBundle({ result: fixture(), csv }), /Public CSV/);
+  }
+  const failed = bundle();
+  failed.result.status = "partial";
+  assert.throws(() => validatePublicLibraryBundle(failed), /incomplete/);
+});
+
 test("Python selection prefers explicit path then clone-local venv over global Python", () => {
   assert.equal(collectionPython({ explicit: "/chosen/python", root: "/repo", exists: () => true }), "/chosen/python");
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: (path) => path.endsWith("/bin/python") }), "/repo/.venv/bin/python");
@@ -266,7 +309,7 @@ test("refresh aborts before any write when a required public source fails", asyn
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result,
+    collect: async () => bundle(result),
     collectRates: async () => rates,
     write: async () => { writes++; },
   }), /Required public source failed/);
@@ -277,7 +320,7 @@ test("refresh aborts before any write when FX rates cannot be verified", async (
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => fixture(),
+    collect: async () => bundle(),
     collectRates: async () => { throw new Error("ECB rate source unavailable"); },
     write: async () => { writes++; },
   }), /ECB rate source unavailable/);
@@ -290,15 +333,48 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   const result = fixture();
   await refreshPrices({
     directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result,
+    collect: async () => bundle(result),
     collectRates: async () => rates,
-    write: async (path, body) => files.set(path, JSON.parse(body)),
+    write: async (path, body) => files.set(path, path.endsWith(".csv.tmp") ? body : JSON.parse(body)),
     move: async (from, to) => publications.push([from, to]), remove: async () => {},
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
+  assert.equal(files.get("/example/data/public-prices.csv.tmp"), fixtureCsv);
+  assert.ok(publications.some(([, to]) => to === "/example/data/public-prices.csv"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].sourceCurrency, "USD");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].fx.rateDate, "2026-10-19");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].fx, undefined);
+});
+
+test("refresh rejects invalid CSV before writing any part of a new dataset", async () => {
+  let writes = 0;
+  await assert.rejects(refreshPrices({
+    read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
+    collect: async () => ({ result: fixture(), csv: "" }),
+    collectRates: async () => rates,
+    write: async () => { writes++; },
+  }), /Public CSV/);
+  assert.equal(writes, 0);
+});
+
+test("CSV staging or publication failure leaves the offers publication marker unchanged", async () => {
+  for (const failAt of ["write", "move"]) {
+    const published = [];
+    const cleaned = [];
+    await assert.rejects(refreshPrices({
+      directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
+      collect: async () => bundle(), collectRates: async () => rates,
+      write: async (path) => { if (failAt === "write" && path.endsWith(".csv.tmp")) throw new Error("CSV write failed"); },
+      move: async (from, to) => {
+        if (failAt === "move" && to.endsWith(".csv")) throw new Error("CSV publication failed");
+        published.push(to);
+      },
+      remove: async (path) => { cleaned.push(path); },
+    }), /CSV (write|publication) failed/);
+    assert.ok(!published.includes("/example/data/offers.json"));
+    assert.ok(cleaned.includes("/example/data/public-prices.csv.tmp"));
+    assert.ok(cleaned.includes("/example/data/offers.json.tmp"));
+  }
 });
