@@ -6,6 +6,7 @@ import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { SnapshotFooter } from "@/components/snapshot-footer";
 import { gpuMemoryLabel } from "@/lib/data";
 import { cheapestComparableOffer, formatFxRate, formatInstancePrice, formatOriginalPrice, formatBenchmarkPrice } from "@/lib/pricing";
+import { isRegionSpecificPrice } from "@/lib/region-matching";
 import { flatkeyWebsiteUrl } from "@/lib/site";
 
 export default async function Home() {
@@ -130,8 +131,9 @@ export default async function Home() {
         <div className="home-region-grid">
           {regions.filter((region) => isRegionIndexable(region.slug)).map((region) => {
             const regionOffers = getOffersForRegion(region.slug);
-            const floor = cheapestComparableOffer(regionOffers);
-            return <Link href={`/regions/${region.slug}`} key={region.slug}><span>{region.label}</span><strong>{region.name}</strong><small>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"} · USD on-demand {formatBenchmarkPrice(floor)}/hr</small><i>↗</i></Link>;
+            const floor = cheapestComparableOffer(regionOffers.filter(isRegionSpecificPrice));
+            const { offlineCount, regionalPriceCount, coverageOnlyCount } = snapshot.getRegionCoverage(region.slug);
+            return <Link href={`/regions/${region.slug}`} key={region.slug}><span>{region.label}</span><strong>{region.name}</strong><small>{regionalPriceCount} regional price{regionalPriceCount === 1 ? "" : "s"}{coverageOnlyCount > 0 ? ` · ${coverageOnlyCount} platform coverage` : ""}{offlineCount > 0 ? ` · ${offlineCount} offline` : ""} · {floor ? `USD on-demand ${formatBenchmarkPrice(floor)}/hr` : "No eligible hourly price"}</small><i>↗</i></Link>;
           })}
         </div>
       </section>

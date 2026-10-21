@@ -1,6 +1,24 @@
 import type { Offer } from "./data";
+import { isRegionSpecificPrice, publishedRegionCodes } from "./region-matching.ts";
 
 export type OfferAudience = "regular" | "member" | "conditional";
+
+export function matchesPriceRegionFilter(offer: Offer, region: string): boolean {
+  const codes = publishedRegionCodes(offer);
+  return region === "all" || (region === "__published" ? codes.length > 0
+    : region === "__unpublished" ? codes.length === 0 : codes.includes(region));
+}
+
+export function priceRegionCoverage(offers: readonly Offer[]) {
+  const official = offers.filter((offer) => offer.dataStatus === "official-page");
+  const regional = official.filter((offer) => publishedRegionCodes(offer).length > 0);
+  return {
+    offerCount: regional.length,
+    providerCount: new Set(regional.map((offer) => offer.providerSlug)).size,
+    regionCount: new Set(regional.flatMap(publishedRegionCodes)).size,
+    unspecifiedCount: official.length - regional.length,
+  };
+}
 
 export type OfferComparisonBucket = {
   key: string;
@@ -18,6 +36,7 @@ export type OfferComparisonGroup = {
   gpuSlug: string;
   buckets: OfferComparisonBucket[];
   offers: Offer[];
+  requireRegionalPrice?: boolean;
 };
 
 export type OfferComparisonSummary = {
@@ -77,7 +96,7 @@ function sortableUsd(offer: Offer): number {
     ? offer.priceUsdPerGpuUnit : Infinity;
 }
 
-export function isLowestPriceCandidate(offer: Offer): boolean {
+export function isLowestPriceCandidate(offer: Offer, requireRegionalPrice = false): boolean {
   const hasUsd = Number.isFinite(sortableUsd(offer));
   const hasOriginal = typeof offer.pricePerGpuUnit === "number" && Number.isFinite(offer.pricePerGpuUnit) && offer.pricePerGpuUnit >= 0;
   const fx = offer.fx;
@@ -89,17 +108,18 @@ export function isLowestPriceCandidate(offer: Offer): boolean {
   return hasUsd && hasOriginal && hasFx
     && offer.dataStatus === "official-page" && offer.availability !== "unavailable"
     && offer.quoteStatus === "quoted" && normalizedBasis(offer) === "full_price"
-    && !hasAdditionalEligibility(offer);
+    && !hasAdditionalEligibility(offer)
+    && (!requireRegionalPrice || isRegionSpecificPrice(offer));
 }
 
-function lowestOffers(offers: readonly Offer[], audience: "regular" | "member"): Offer[] {
-  const eligible = offers.filter((offer) => isLowestPriceCandidate(offer) && offerAudience(offer) === audience);
+function lowestOffers(offers: readonly Offer[], audience: "regular" | "member", requireRegionalPrice = false): Offer[] {
+  const eligible = offers.filter((offer) => isLowestPriceCandidate(offer, requireRegionalPrice) && offerAudience(offer) === audience);
   const minimum = Math.min(...eligible.map((offer) => offer.priceUsdPerGpuUnit!));
   return eligible.filter((offer) => offer.priceUsdPerGpuUnit === minimum);
 }
 
-function lowestIds(offers: Offer[], audience: "regular" | "member"): string[] {
-  return lowestOffers(offers, audience).map((offer) => offer.id);
+function lowestIds(offers: Offer[], audience: "regular" | "member", requireRegionalPrice = false): string[] {
+  return lowestOffers(offers, audience, requireRegionalPrice).map((offer) => offer.id);
 }
 
 const periodOrder: Record<Offer["billingUnit"], number> = { "GPU-hour": 0, "GPU-month": 1 };
@@ -124,8 +144,8 @@ export function summarizeComparisonGroup(group: OfferComparisonGroup): OfferComp
   }
   return [...summaries.values()].map(({ summary, offers }) => ({
     ...summary,
-    lowestRegularOffers: lowestOffers(offers, "regular"),
-    lowestMemberOffers: lowestOffers(offers, "member"),
+    lowestRegularOffers: lowestOffers(offers, "regular", group.requireRegionalPrice),
+    lowestMemberOffers: lowestOffers(offers, "member", group.requireRegionalPrice),
   })).sort((a, b) => periodOrder[a.billingUnit] - periodOrder[b.billingUnit]
     || rentalOrder[a.rentalType] - rentalOrder[b.rentalType]);
 }
@@ -145,7 +165,7 @@ function compareBuckets(a: OfferComparisonBucket, b: OfferComparisonBucket): num
  * Lowest badges are scoped to a bucket and audience, never across configurations.
  * Input offers are retained (including dated/offline records) and never mutated.
  */
-export function groupOffersForComparison(input: readonly Offer[]): OfferComparisonGroup[] {
+export function groupOffersForComparison(input: readonly Offer[], { requireRegionalPrice = false } = {}): OfferComparisonGroup[] {
   const groups = new Map<string, Map<string, OfferComparisonBucket>>();
   for (const offer of input) {
     let buckets = groups.get(offer.gpuSlug);
@@ -161,10 +181,10 @@ export function groupOffersForComparison(input: readonly Offer[]): OfferComparis
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([gpuSlug, bucketsByKey]) => {
     const buckets = [...bucketsByKey.values()].sort(compareBuckets).map((bucket) => {
       bucket.offers.sort((a, b) => sortableUsd(a) - sortableUsd(b) || a.providerSlug.localeCompare(b.providerSlug) || a.id.localeCompare(b.id));
-      bucket.lowestRegularIds = lowestIds(bucket.offers, "regular");
-      bucket.lowestMemberIds = lowestIds(bucket.offers, "member");
+      bucket.lowestRegularIds = lowestIds(bucket.offers, "regular", requireRegionalPrice);
+      bucket.lowestMemberIds = lowestIds(bucket.offers, "member", requireRegionalPrice);
       return bucket;
     });
-    return { gpuSlug, buckets, offers: buckets.flatMap((bucket) => bucket.offers) };
+    return { gpuSlug, buckets, offers: buckets.flatMap((bucket) => bucket.offers), requireRegionalPrice };
   });
 }

@@ -42,6 +42,9 @@
 .resultActions { display: flex; align-items: center; gap: 16px; }
 .resultActions button { padding: 4px 0; border: 0; background: transparent; color: var(--ink); font: 9px var(--font-mono); cursor: pointer; }
 .resultActions button:hover { text-decoration: underline; text-underline-offset: 4px; }
+.regionCoverage { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; padding: 10px 24px; border-bottom: 1px solid var(--line); color: var(--muted); font: 10px/1.6 var(--font-mono); }
+.regionCoverage strong { color: var(--ink); font-weight: 500; }
+.regionCoverage button { border: 0; padding: 0; background: transparent; color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font: inherit; }
 .usdNote { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 24px 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .usdNote > span > strong { margin-right: 4px; padding: 3px 5px; color: var(--ink); background: var(--acid); font: 9px var(--font-mono); }
 .usdNote > details { position: relative; flex: none; }
@@ -65,6 +68,7 @@
 .modelToggle[aria-expanded="true"] { color: var(--white); background: var(--ink); }
 .modelIdentity { min-width: 0; font-size: 23px; font-weight: 800; letter-spacing: -.045em; }
 .modelCount { color: var(--muted); font: 9px/1.5 var(--font-mono); }
+.modelCount small { display: block; margin-top: 3px; font: inherit; }
 .modelToggleLabel { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--ink); font: 9px var(--font-mono); text-transform: uppercase; white-space: nowrap; }
 .modelToggle[aria-expanded="true"] .modelCount { color: var(--paper-deep); }
 .modelToggle[aria-expanded="true"] .modelToggleLabel { color: var(--acid); }
@@ -220,6 +224,7 @@
   .moreFilters > svg:first-child, .moreFilters > svg:last-child { display: none; }
   .chips { padding-inline: 18px; }
   .results { padding: 12px 18px; gap: 10px; flex-wrap: wrap; }
+  .regionCoverage { padding-inline: 18px; font-size: 9px; }
   .resultActions { gap: 14px; }
   .usdNote { padding-inline: 18px; font-size: 9px; }
   .usdNote > span > span { display: none; }
