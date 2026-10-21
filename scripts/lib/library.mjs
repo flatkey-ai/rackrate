@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.6.1";
-export const LIBRARY_COMMIT = "bdbe0920a534facadf9b30bf0562f1278223c6ad";
+export const LIBRARY_VERSION = "0.7.0";
+export const LIBRARY_COMMIT = "3439e05d096645ed5d41df7ed78daacbb9b8f80a";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -18,8 +18,7 @@ export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTH
   return candidates.find((candidate) => exists(candidate)) ?? "python3";
 }
 export const REQUIRED_PROVIDERS = Object.freeze([
-  "nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod",
-  "digitalocean", "verda", "ebcloud", "azure", "suanli",
+  "nebius", "crusoe", "lambda", "ucloud", "autodl",
 ]);
 
 const PROVIDERS = {
@@ -28,12 +27,6 @@ const PROVIDERS = {
   lambda: ["Lambda", "GPU cloud", "https://lambda.ai"],
   ucloud: ["UCloud", "GPU cloud", "https://www.ucloud.cn"],
   autodl: ["AutoDL", "Marketplace", "https://www.autodl.com"],
-  runpod: ["RunPod", "GPU cloud", "https://www.runpod.io"],
-  digitalocean: ["DigitalOcean", "GPU cloud", "https://www.digitalocean.com"],
-  verda: ["Verda", "GPU cloud", "https://verda.com"],
-  ebcloud: ["EBCloud", "GPU cloud", "https://www.ebcloud.com"],
-  azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
-  suanli: ["共绩算力", "GPU cloud", "https://suanli.cn"],
 };
 
 // Settings() deliberately bypasses .env and credentials inherited by this process.
@@ -43,7 +36,7 @@ import json
 from gpu_price_monitor import Settings, __version__, collect_prices
 if __version__ != "${LIBRARY_VERSION}":
     raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
-result = collect_prices("all", settings=Settings(), include_coverage=True)
+result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
 
@@ -231,7 +224,14 @@ export function normalizeLibraryResult(result) {
     const instancePrice = instance ? monetaryAmount(instance.amount, "instance price") : null;
     if (instance && !["instance_hour", "instance_month"].includes(instance.unit)) throw new Error(`Unsupported instance unit at ${index}`);
     const resources = quote.resources ?? {};
-    const countryCode = /^[A-Z]{2}$/.test(quote.location?.country_code ?? "") ? quote.location.country_code : "";
+    const declaredCountries = strings(quote.compute_countries ?? [], "compute countries");
+    if (declaredCountries.some((code) => !/^[A-Z]{2}$/.test(code))) throw new Error(`Invalid compute country at ${index}`);
+    const countryBoundScope = !quote.price_scope
+      || ["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(quote.price_scope);
+    const computeCountries = countryBoundScope ? declaredCountries : [];
+    const countryCode = !countryBoundScope ? ""
+      : /^[A-Z]{2}$/.test(quote.location?.country_code ?? "") ? quote.location.country_code
+        : computeCountries.length === 1 ? computeCountries[0] : "";
     return {
       id: stableId(quote), gpuSlug, providerSlug: quote.provider, gpuModel: family,
       rawGpuModel: quote.gpu_model, rawName: quote.raw_name ?? null, rawSku: quote.raw_sku ?? null,
@@ -256,7 +256,8 @@ export function normalizeLibraryResult(result) {
       pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
       region: regions.length ? regions.join(", ") : "Not published", regions, zones,
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
-      countryCode, location: quote.location ?? null,
+      countryCode, computeCountries, location: quote.location ?? null,
+      priceScope: quote.price_scope ?? null, locationSource: quote.location_source ?? null,
       availability, sourceAvailability: rawAvailability,
       egress: "Not published", sourceUrl: quote.source_url,
       sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
@@ -314,36 +315,20 @@ export function validateOffers(offers, { requireUsd = false, rates } = {}) {
   }
 }
 
-export function buildRackRateDataset(current, libraryResult, hyperstack) {
+export function buildRackRateDataset(_current, libraryResult) {
   const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
-  if (!hyperstack?.offers?.length) throw new Error("Hyperstack returned no offers; existing data was preserved");
-  const additionalOffers = hyperstack.offers.map((offer) => ({
-    ...offer, pricePerGpuUnit: offer.pricePerGpuHour, sourceAmount: String(offer.pricePerGpuHour),
-    regions: [], zones: [], region: "Not published", countryCode: "",
-    geographicScope: "unspecified", regionScope: "unspecified",
-    gpuCount: null, egress: "Not published",
-    quoteStatus: "quoted", priceBasis: "advertised_per_gpu", billingMode: "on_demand",
-    conditions: ["Public pricing page; no compute location or current inventory was verified."],
-  }));
-  // Keep existing explicitly dated references. Never call a credential-based collector here.
-  const references = (current.offers ?? []).filter((offer) => offer.dataStatus === "seed").map((offer) => ({
-    ...offer, pricePerGpuUnit: offer.pricePerGpuHour, sourceAmount: String(offer.pricePerGpuHour),
-    quoteStatus: "quoted", priceBasis: "reference", billingMode: offer.rentalType === "Spot" ? "spot" : "on_demand",
-    conditions: ["Dated reference data; not refreshed or verified by this public collection."],
-  }));
-  const offers = [...references, ...publicOffers, ...additionalOffers].sort((a, b) => a.id.localeCompare(b.id));
+  // Only this collection's five source results define the current dataset.
+  // Earlier references remain in dated history; they are never re-observed.
+  const offers = publicOffers.sort((a, b) => a.id.localeCompare(b.id));
   validateOffers(offers);
   return {
     schemaVersion: 2,
-    generatedAt: [libraryResult.collected_at, hyperstack.observedAt].sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1),
-    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only" },
+    generatedAt: libraryResult.collected_at,
+    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS] },
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
-      { provider: "reference", url: "https://rackrate.org/methodology", status: "reference",
-        fetchedAt: references.map((offer) => offer.observedAt).sort().at(-1) ?? null, offerCount: references.length },
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
         status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
-      { provider: "hyperstack", url: hyperstack.url, status: "ok", fetchedAt: hyperstack.observedAt, offerCount: additionalOffers.length },
     ],
     offers,
   };

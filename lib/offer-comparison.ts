@@ -1,5 +1,6 @@
 import type { Offer } from "./data";
 import { isRegionSpecificPrice, publishedRegionCodes } from "./region-matching.ts";
+import { isAccountSpecificPrice } from "./pricing.ts";
 
 export type OfferAudience = "regular" | "member" | "conditional";
 
@@ -60,7 +61,7 @@ export function isMemberPrice(offer: Offer): boolean {
 // Generic source caveats (stock/account/checkout not verified) are not special
 // eligibility. Only published purchase restrictions make an offer conditional.
 export function hasAdditionalEligibility(offer: Offer): boolean {
-  return offer.conditions.some((condition) => eligibilityPattern.test(condition)
+  return isAccountSpecificPrice(offer) || offer.conditions.some((condition) => eligibilityPattern.test(condition)
     && !/\bno (?:minimum )?commitment\b|\bwithout (?:a )?commitment\b/i.test(condition));
 }
 

@@ -4,7 +4,7 @@ import type { Gpu, Offer, Provider } from "@/lib/data";
 import type { OfferComparisonGroup, OfferComparisonBucket } from "@/lib/offer-comparison";
 import { offerAudience, hasAdditionalEligibility, summarizeComparisonGroup, priceRegionCoverage } from "@/lib/offer-comparison";
 import { isRegionSpecificPrice, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
-import { availabilityLabel, billingUnitLabel, formatAmount, formatOfferPrice, priceBasisLabel } from "@/lib/pricing";
+import { availabilityLabel, billingUnitLabel, cloudTierLabel, formatAmount, formatOfferPrice, isAccountSpecificPrice, priceBasisLabel, summaryConfigurationLabel } from "@/lib/pricing";
 import { OfferDetails } from "./offer-details";
 import styles from "./price-explorer.module.css";
 
@@ -14,7 +14,7 @@ function Chevron({ open = false }: { open?: boolean }) {
 
 function RateLabel({ offer }: { offer: Offer }) {
   const audience = offerAudience(offer);
-  return <><span className={`${styles.rateLabel} ${audience === "member" ? styles.memberRate : audience === "conditional" ? styles.conditional : styles.regularRate}`}>{audience === "member" ? "Member rate" : audience === "conditional" ? "Eligibility rate" : "Regular rate"}</span>{audience === "member" && hasAdditionalEligibility(offer) && <span className={styles.conditional}>Conditions apply</span>}</>;
+  return <><span className={`${styles.rateLabel} ${audience === "member" ? styles.memberRate : audience === "conditional" ? styles.conditional : styles.regularRate}`}>{isAccountSpecificPrice(offer) ? "Account quote" : audience === "member" ? "Member rate" : audience === "conditional" ? "Eligibility rate" : "Regular rate"}</span>{audience === "member" && hasAdditionalEligibility(offer) && <span className={styles.conditional}>Conditions apply</span>}</>;
 }
 
 function OfferTerms({ offer }: { offer: Offer }) {
@@ -51,7 +51,7 @@ function BucketHeading({ bucket }: { bucket: OfferComparisonBucket }) {
 function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audience: "regular" | "member"; providers: Map<string, Provider> }) {
   const offer = offers[0];
   const platforms = [...new Set(offers.map((entry) => providers.get(entry.providerSlug)?.name ?? entry.providerSlug))];
-  const configurations = [...new Set(offers.map((entry) => [entry.vramGb == null ? null : `${entry.vramGb} GB`, entry.gpuVariant, entry.gpuCount == null ? null : `${entry.gpuCount}× GPU node`].filter(Boolean).join(" · ") || "Configuration not published"))];
+  const configurations = [...new Set(offers.map(summaryConfigurationLabel))];
   const locations = [...new Set(offers.map((entry) => {
     const label = publishedRegionCodes(entry).slice().sort().map((code) => publishedRegionLabel(entry, code)).join(" · ");
     return label ? `${isRegionSpecificPrice(entry) ? "" : "Platform coverage: "}${label}` : "Quote region not provided";
@@ -77,7 +77,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
   const platformCount = new Set(group.offers.map((offer) => offer.providerSlug)).size;
   const regionCoverage = priceRegionCoverage(group.offers);
   const regionSummary = `${regionCoverage.offerCount} quote${regionCoverage.offerCount === 1 ? "" : "s"} with region info · ${regionCoverage.regionCount} region${regionCoverage.regionCount === 1 ? "" : "s"}`;
-  const configuration = (offer: Offer) => [offer.gpuCount !== null ? `${offer.gpuCount}× GPU` : null, offer.cloudTier, offer.vcpu ? `${offer.vcpu} vCPU` : null, offer.ramGb ? `${offer.ramGb} GB RAM` : null].filter(Boolean).join(" · ") || "See configuration details";
+  const configuration = (offer: Offer) => [offer.gpuCount !== null ? `${offer.gpuCount}× GPU` : null, cloudTierLabel(offer), isAccountSpecificPrice(offer) ? "Account-specific quote" : null, offer.vcpu ? `${offer.vcpu} vCPU` : null, offer.ramGb ? `${offer.ramGb} GB RAM` : null].filter(Boolean).join(" · ") || "See configuration details";
   const toggle = (offerId: string) => setExpanded(expanded === offerId ? null : offerId);
   const collapse = () => { setOpen(false); setExpanded(null); trigger.current?.focus(); };
   return <section className={styles.modelGroup} aria-label={`${gpu.shortName} price comparison`}>

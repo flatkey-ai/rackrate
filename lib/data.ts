@@ -3,6 +3,16 @@ import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from 
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
+export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"] as const;
+const competitorProviders = new Set<string>(COMPETITOR_PROVIDER_SLUGS);
+const priorityGpuSlugs = ["nvidia-h100", "nvidia-h200", "nvidia-b200", "nvidia-b300"];
+
+export function prioritizeGpuCatalog<T extends { slug: string }>(catalog: readonly T[]): T[] {
+  const priority = new Map(priorityGpuSlugs.map((slug, index) => [slug, index]));
+  return catalog.map((gpu, index) => ({ gpu, index })).sort((a, b) =>
+    (priority.get(a.gpu.slug) ?? priorityGpuSlugs.length) - (priority.get(b.gpu.slug) ?? priorityGpuSlugs.length)
+    || a.index - b.index).map(({ gpu }) => gpu);
+}
 
 export type Gpu = {
   slug: string;
@@ -58,12 +68,16 @@ export type Offer = {
   pricingTier?: string | null;
   cloudTier?: string | null;
   membershipRequired?: boolean;
+  accountScope?: string;
   region: string;
   regions: string[];
   zones: string[];
   geographicScope?: string;
   regionScope?: string;
   location?: Record<string, unknown> | null;
+  locationSource?: Record<string, unknown> | null;
+  computeCountries?: string[];
+  priceScope?: string | null;
   countryCode: string;
   availability: Availability;
   egress: string;
@@ -244,7 +258,7 @@ export type PricingDataset = {
   schemaVersion?: number;
   offers: Offer[];
   generatedAt: string;
-  collector?: { name: string; version: string; commit: string };
+  collector?: { name: string; version: string; commit: string; providers?: string[] };
   coverage?: { totals: Record<string, number> };
   fx?: { rateDate: string; sourceName: string; sourceUrl: string; observedAt: string };
   sources: { provider: string; status: string; [key: string]: unknown }[];
@@ -436,8 +450,15 @@ export const regions: RegionProfile[] = [
 export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies by listing" : `${gpu.vramGb} GB ${gpu.memoryType}`;
 
 export function createPricingData(dataset: PricingDataset) {
-  const gpuCatalog = new Map(curatedGpus.map((gpu) => [gpu.slug, gpu]));
+  // Historical snapshots remain intact. The current board only projects
+  // source-backed offers from the five explicitly tracked competitors.
+  const currentOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
+    && offer.dataStatus === "official-page");
+  const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
+  const currentProviderSlugs = new Set(currentOffers.map((offer) => offer.providerSlug));
+  const gpuCatalog = new Map(curatedGpus.filter((gpu) => currentGpuSlugs.has(gpu.slug)).map((gpu) => [gpu.slug, gpu]));
   for (const entry of dataset.generatedCatalog?.gpus ?? []) {
+    if (!currentGpuSlugs.has(entry.slug)) continue;
     const curated = gpuCatalog.get(entry.slug);
     gpuCatalog.set(entry.slug, {
       slug: entry.slug, name: entry.name, shortName: entry.shortName,
@@ -451,9 +472,11 @@ export function createPricingData(dataset: PricingDataset) {
       summary: entry.summary ?? "Source-backed GPU listings. Compare each listing’s variant, memory and terms.",
     });
   }
-  const gpus: Gpu[] = [...gpuCatalog.values()];
-  const providerCatalog = new Map(curatedProviders.map((provider) => [provider.slug, provider]));
+  const gpus: Gpu[] = prioritizeGpuCatalog([...gpuCatalog.values()]);
+  const providerCatalog = new Map(curatedProviders.filter((provider) => competitorProviders.has(provider.slug)
+    && currentProviderSlugs.has(provider.slug)).map((provider) => [provider.slug, provider]));
   for (const entry of dataset.generatedCatalog?.providers ?? []) {
+    if (!competitorProviders.has(entry.slug) || !currentProviderSlugs.has(entry.slug)) continue;
     const curated = providerCatalog.get(entry.slug);
     providerCatalog.set(entry.slug, {
       slug: entry.slug, name: entry.name, website: entry.website,
@@ -464,7 +487,7 @@ export function createPricingData(dataset: PricingDataset) {
     });
   }
   const providers: Provider[] = [...providerCatalog.values()];
-  const offers: Offer[] = dataset.offers.map((offer) => ({
+  const offers: Offer[] = currentOffers.map((offer) => ({
     ...offer,
     pricePerGpuUnit: offer.pricePerGpuUnit ?? (offer.sourceCurrency === "USD" ? offer.pricePerGpuHour : null) ?? null,
     priceUsdPerGpuUnit: offer.priceUsdPerGpuUnit ?? (offer.sourceCurrency === "USD" ? offer.pricePerGpuUnit ?? offer.pricePerGpuHour : null) ?? null,
@@ -477,10 +500,14 @@ export function createPricingData(dataset: PricingDataset) {
     zones: offer.zones ?? [],
   }));
   const offerDatasetGeneratedAt = dataset.generatedAt;
-  const offerDatasetSources = dataset.sources;
+  const offerDatasetSources = dataset.sources.filter((source) => competitorProviders.has(source.provider));
 
   const getGpu = (slug: string) => gpus.find((gpu) => gpu.slug === slug);
-  const getProvider = (slug: string) => providers.find((provider) => provider.slug === slug);
+  // Flatkey keeps its separate commercial profile and CTA, with no competitor
+  // price records or directory placement in the five-source comparison.
+  const getProvider = (slug: string) => slug === "flatkey"
+    ? curatedProviders.find((provider) => provider.slug === "flatkey")
+    : providers.find((provider) => provider.slug === slug);
   const getOffersForGpu = (slug: string) => offers.filter((offer) => offer.gpuSlug === slug);
   const getOffersForProvider = (slug: string) => offers.filter((offer) => offer.providerSlug === slug);
   const getRegion = (slug: string) => regions.find((region) => region.slug === slug);
@@ -528,13 +555,13 @@ export function createPricingData(dataset: PricingDataset) {
       offlineOffers: offers.filter((offer) => offer.availability === "unavailable").length,
       contactSalesOffers: offers.filter((offer) => offer.quoteStatus === "contact_sales").length,
     },
-    sources: dataset.sources.map((source) => ({ provider: source.provider, status: source.status, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
+    sources: offerDatasetSources.map((source) => ({ provider: source.provider, status: source.status, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
     providerCounts: Object.fromEntries([...new Set(offers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, offers.filter((offer) => offer.providerSlug === provider).length])),
   };
 
   return {
     offers, gpus, providers, regions,
-    generatedAt: dataset.generatedAt, sources: dataset.sources,
+    generatedAt: dataset.generatedAt, sources: offerDatasetSources,
     offerDatasetGeneratedAt, offerDatasetSources,
     getGpu, getProvider, getOffersForGpu, getOffersForProvider,
     getRegion, getOffersForRegion, getRegionCoverage, isRegionIndexable, getRegionForOffer,

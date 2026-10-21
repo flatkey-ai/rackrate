@@ -36,7 +36,7 @@ test("multi-region quotes reach each documented market without changing source m
 });
 
 test("unknown catalog locations are never classified by headquarters, currency or a Global default", () => {
-  const unknown = quote({ providerSlug: "runpod", region: "Not published", regions: [], sourceCurrency: "USD" });
+  const unknown = quote({ providerSlug: "lambda", region: "Not published", regions: [], sourceCurrency: "USD" });
   const data = createPricingData(dataset([unknown]));
   assert.deepEqual(getOfferCountryCodes(unknown), []);
   for (const region of data.regions) assert.deepEqual(data.getOffersForRegion(region.slug), []);
@@ -56,13 +56,13 @@ test("offline China records remain in the country board without becoming a renta
 });
 
 test("region coverage includes official code-only listings and keeps countries distinct", () => {
+  const located = (id: string, region: string, countryCode: string) => quote({ id, providerSlug: "ucloud", region, regions: [region], countryCode });
   const data = createPricingData(dataset([
-    quote(), quote({ id: "ca-east", region: "canadaeast", regions: ["canadaeast"] }),
-    quote({ id: "ca-central-spot", rentalType: "Spot" }),
-    quote({ id: "india", region: "southindia", regions: ["southindia"] }),
-    quote({ id: "jp", region: "japaneast", regions: ["japaneast"] }),
+    located("ca-central", "test-ca-central", "CA"), located("ca-east", "test-ca-east", "CA"),
+    { ...located("ca-central-spot", "test-ca-central", "CA"), rentalType: "Spot" },
+    located("india", "test-in", "IN"), located("jp", "test-jp", "JP"),
     quote({ id: "il", providerSlug: "nebius", region: "me-west1", regions: ["me-west1"] }),
-    quote({ id: "br", region: "brazilsouth", regions: ["brazilsouth"] }),
+    located("br", "test-br", "BR"),
   ]));
   assert.equal(data.isRegionIndexable("canada"), true);
   assert.equal(data.getRegionCoverage("canada").officialCount, 3);
@@ -89,7 +89,7 @@ test("platform availability codes do not turn a generic catalog rate into a regi
     pricePerGpuUnit: 0.5, priceUsdPerGpuUnit: 0.5, pricePerGpuHour: 0.5,
     conditions: ["Published platform availability is not a region-specific price quote."],
   });
-  const regional = quote({ id: "regional-retail-rate", region: "swedencentral", regions: ["swedencentral"] });
+  const regional = quote({ id: "regional-retail-rate", providerSlug: "ucloud", countryCode: "SE", region: "test-se", regions: ["test-se"] });
   const data = createPricingData(dataset([coverage, regional]));
   const europeanOffers = data.getOffersForRegion("europe");
   assert.equal(europeanOffers.length, 2);
@@ -105,10 +105,26 @@ test("platform availability codes do not turn a generic catalog rate into a regi
   assert.deepEqual(getOfferCountryCodes(coverage), ["FI"]);
 });
 
-test("dated regional references are counted separately from both official prices and platform coverage", () => {
+test("dated regional references are absent from the current regional comparison", () => {
   const reference = quote({ dataStatus: "seed", providerSlug: "vast-ai", region: "Europe", regions: ["Europe"], countryCode: "EU" });
   const data = createPricingData(dataset([reference]));
-  assert.deepEqual(data.getRegionCoverage("europe"), { offerCount: 1, officialCount: 0, referenceCount: 1, offlineCount: 0, regionalPriceCount: 0, coverageOnlyCount: 0 });
+  assert.deepEqual(data.getRegionCoverage("europe"), { offerCount: 0, officialCount: 0, referenceCount: 0, offlineCount: 0, regionalPriceCount: 0, coverageOnlyCount: 0 });
+});
+
+test("explicit library price scope governs country and regional-price claims", () => {
+  const coverage = quote({ providerSlug: "nebius", region: "eu-north1", regions: ["eu-north1"],
+    countryCode: "FI", computeCountries: ["FI"], priceScope: "platform_coverage" });
+  assert.equal(isRegionSpecificPrice(coverage), false);
+  assert.deepEqual(getOfferCountryCodes(coverage), []);
+  assert.equal(matchesCountryRegionSelection(coverage, "FI", "eu-north1"), false);
+  assert.equal(offerMatchesRegion(coverage, { countryCodes: ["FI"], regionNames: ["eu-north1"] }), false);
+  const regional = quote({ providerSlug: "ucloud", region: "cn-wlcb", regions: ["cn-wlcb"],
+    countryCode: "", computeCountries: ["CN"], priceScope: "zone_quote",
+    locationSource: { api_url: "https://api.ucloud.cn/", country_field: "CountryCode" } });
+  assert.equal(isRegionSpecificPrice(regional), true);
+  assert.deepEqual(getOfferCountryCodes(regional), ["CN"]);
+  assert.deepEqual(publishedRegionsForCountry(regional, "CN"), ["cn-wlcb"]);
+  assert.deepEqual(regionMappingSources([regional]), ["https://api.ucloud.cn/"]);
 });
 
 test("country and region selection joins the same code instead of crossing a multi-country catalog record", () => {

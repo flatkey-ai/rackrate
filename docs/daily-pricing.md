@@ -4,8 +4,8 @@ Collection is scheduled once each day at **10:30 Asia/Shanghai**, implemented as
 
 ## Cloud execution and publication
 
-1. Check the verified main-branch snapshot. If all eleven required sources already completed after today's 10:30 China-time cutoff, skip another collection.
-2. When collection is due, install the immutable library revision in `requirements-collector.txt` and its browser dependency. Run all eleven anonymous library sources plus the public Hyperstack collector. No cloud-provider keys, login state, recharge or GPU provisioning is used.
+1. Check the verified main-branch snapshot. If all five required sources already completed after today's 10:30 China-time cutoff, skip another collection.
+2. When collection is due, install the immutable library revision in `requirements-collector.txt` and its browser dependency. Collect exactly Nebius, Crusoe, Lambda, UCloud and AutoDL through the anonymous library interface. No additional collector, cloud-provider keys, login state, recharge or GPU provisioning is used.
 3. Read the latest published ECB reference rates anonymously. Validate prices, currencies, billing periods, source identity, geography and FX date. Preserve original amounts and convert only currency; monthly rates stay per month. Save the raw library response, FX snapshot, adapted offers and history.
 4. Run tests, typechecking and a production build before committing the four data files to main. Collection or validation failure leaves the last verified main-branch data intact.
 5. The website reads the single self-contained public `main/data/offers.json` file at request time. Source metadata, GPU/provider catalogs and FX belong to that same snapshot; the website does not combine independently fetched main-branch files.
@@ -45,6 +45,8 @@ The test origin changes only where the verifier sends its public GETs. It does n
 
 ## Data checks
 
-Confirm all eleven library provider results succeeded and inspect `coverage` for model gaps; model-family coverage is not a completeness or stock guarantee. Check the USD main price, exact original amount/currency, dated FX source/rate, hourly versus monthly periods, unpublished geography, offline UCloud promotions and contact-sales rows. Ordinary/member rates, Spot/on-demand, cloud tiers, hardware variants and GPU-component versus complete-instance costs retain their conditions. Missing or failed data is never a zero price.
+Confirm all five library provider results succeeded and inspect `coverage` for model gaps; model-family coverage is not a completeness or stock guarantee. The current dataset contains only this collection's offers, and the GPU directory omits models without such offers. Earlier records are preserved in dated history rather than re-observed as current prices. Check the USD main price, exact original amount/currency, dated FX source/rate, hourly versus monthly periods, unpublished geography, offline UCloud promotions and contact-sales rows. Ordinary/member rates, Spot/on-demand, hardware variants and GPU-component versus complete-instance costs retain their conditions. Missing or failed data is never a zero price.
+
+Preserve `price_scope`, `compute_countries` and `location_source` in the adapted offer. Only region- or zone-bound quotes support country-price filters and regional minima. A provider's platform coverage remains coverage; it is not expanded into prices in those countries. An offline promotional listing remains offline.
 
 The reusable library remains independently usable through Python and JSON CLI. It contains no RackRate storage, scheduling, publication endpoints or credentials.

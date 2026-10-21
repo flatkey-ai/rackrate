@@ -10,6 +10,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: "/", priority: 1 },
     { path: "/gpus", priority: 0.9 },
     { path: "/providers", priority: 0.85 },
+    { path: "/providers/flatkey", priority: 0.75 },
     { path: "/regions", priority: 0.85 },
     { path: "/guides/gpu-rental-pricing", priority: 0.9 },
     { path: "/methodology", priority: 0.6 },

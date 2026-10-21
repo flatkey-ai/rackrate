@@ -37,10 +37,25 @@ export function priceBasisLabel(offer: Offer) {
 export function configurationLabel(offer: Offer) {
   return [offer.gpuCount === null ? "GPU count not published" : `${offer.gpuCount}× GPU`, offer.gpuVariant, offer.vramGb === null ? null : `${offer.vramGb} GB VRAM`, offer.vcpu ? `${offer.vcpu} vCPU` : null, offer.ramGb ? `${offer.ramGb} GB RAM` : null].filter(Boolean).join(" · ");
 }
+export function cloudTierLabel(offer: Pick<Offer, "cloudTier">): string | null {
+  const tier = offer.cloudTier?.trim();
+  if (!tier) return null;
+  return ({ secure: "Secure Cloud", secure_cloud: "Secure Cloud", community: "Community Cloud", community_cloud: "Community Cloud" } as Record<string, string>)[tier.toLowerCase()]
+    ?? `Cloud tier: ${tier}`;
+}
+export function isAccountSpecificPrice(offer: Pick<Offer, "accountScope">): boolean {
+  return /^account(?:$|[_-])/.test(offer.accountScope ?? "");
+}
+export function summaryConfigurationLabel(offer: Offer): string {
+  return [cloudTierLabel(offer), offer.vramGb == null ? null : `${offer.vramGb} GB`, offer.gpuVariant,
+    offer.gpuCount == null ? null : `${offer.gpuCount}× GPU node`,
+    isAccountSpecificPrice(offer) ? "Account-specific quote" : null].filter(Boolean).join(" · ")
+    || "Configuration not published";
+}
 // USD-normalized comparisons never mix billing periods, offline/reference listings,
 // starting prices, component-only charges, member rates or purchasing models.
 export function hasEligibilityConditions(offer: Offer) {
-  return offer.membershipRequired === true || offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
+  return isAccountSpecificPrice(offer) || offer.membershipRequired === true || offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
 }
 export function isComparableUsdHourly(offer: Offer): offer is Offer & { pricePerGpuHour: number } {
   return offer.billingUnit === "GPU-hour"

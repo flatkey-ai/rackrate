@@ -1,6 +1,7 @@
 import type { PricingDataset } from "./data";
 
-const REQUIRED = ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
+const FIVE_PROVIDERS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
+const LEGACY_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
 const ECB_PAGE = "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html";
 const ECB_XML = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 const FIVE_MINUTES = 300_000;
@@ -81,6 +82,15 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   check(collector.name === "gpu-price-monitor" && collector.mode === "public-only"
     && typeof collector.version === "string" && /^\d+\.\d+\.\d+$/.test(collector.version)
     && typeof collector.commit === "string" && /^[a-f0-9]{40}$/.test(collector.commit), "public collector identity");
+  // Existing bundled snapshots remain readable at their original observation
+  // time. New collections declare the exact five-provider scope explicitly.
+  const scoped = collector.providers !== undefined;
+  if (scoped) {
+    const declared = list(collector.providers, "collector providers");
+    check(declared.length === FIVE_PROVIDERS.length && new Set(declared).size === FIVE_PROVIDERS.length
+      && FIVE_PROVIDERS.every((provider) => declared.includes(provider)), "five-provider collector scope");
+  }
+  const REQUIRED = scoped ? FIVE_PROVIDERS : LEGACY_PROVIDERS;
 
   const catalog = row(data.generatedCatalog, "generatedCatalog");
   const gpuSlugs = new Set<string>();
@@ -98,10 +108,12 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     check(!providerSlugs.has(id) && REQUIRED.includes(id), "duplicate or unknown provider catalog slug");
     providerSlugs.add(id); text(provider.name, "provider name"); url(provider.website, "provider website");
   }
-  // These existing, curated records are intentionally outside the generated
-  // library catalog: Hyperstack plus explicitly dated AWS/Vast references.
-  gpuSlugs.add("nvidia-a100-80gb");
-  for (const provider of ["aws", "vast-ai", "hyperstack"]) providerSlugs.add(provider);
+  if (!scoped) {
+    // Compatibility for the immutable legacy fallback only. Current boards
+    // project five competitors and never surface these historical references.
+    gpuSlugs.add("nvidia-a100-80gb");
+    for (const provider of ["aws", "vast-ai", "hyperstack"]) providerSlugs.add(provider);
+  }
   for (const provider of REQUIRED) check(providerSlugs.has(provider), `missing provider catalog: ${provider}`);
 
   const fx = row(data.fx, "FX registry");
@@ -138,6 +150,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     check(gpuSlugs.has(slug(offer.gpuSlug)) && providerSlugs.has(slug(offer.providerSlug)), "unknown offer catalog reference");
     const provider = offer.providerSlug as string;
     check(["official-page", "seed"].includes(String(offer.dataStatus)), "offer provenance status");
+    if (scoped) check(offer.dataStatus === "official-page", "current source-backed offer provenance");
     if (offer.dataStatus === "official-page") {
       check(REQUIRED.includes(provider), "unknown official provider");
       officialCounts.set(provider, (officialCounts.get(provider) ?? 0) + 1);
@@ -156,6 +169,21 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     strings(offer.conditions, "offer conditions"); url(offer.sourceUrl, "offer source URL");
     time(offer.observedAt, ceiling, "offer observedAt"); text(offer.region, "offer region label");
     check(typeof offer.countryCode === "string" && /^(?:[A-Z]{2})?$/.test(offer.countryCode), "offer country");
+    if (offer.computeCountries !== undefined) {
+      const countries = list(offer.computeCountries, "compute countries");
+      check(countries.every((country) => typeof country === "string" && /^[A-Z]{2}$/.test(country)), "compute country code");
+    }
+    if (offer.priceScope !== undefined && offer.priceScope !== null) {
+      check(["unlocated_catalog", "platform_coverage", "regional_quote", "zone_quote", "requested_region_quote", "requested_zone_quote"].includes(String(offer.priceScope)), "price location scope");
+      if (["unlocated_catalog", "platform_coverage"].includes(String(offer.priceScope))) {
+        check(offer.countryCode === "" && list(offer.computeCountries, "unlocated compute countries").length === 0,
+          "catalog coverage is not a country price");
+      }
+    }
+    if (offer.locationSource !== undefined && offer.locationSource !== null) {
+      const locationSource = row(offer.locationSource, "location provenance");
+      for (const key of ["source_url", "api_url"]) if (locationSource[key] !== undefined) url(locationSource[key], "location source URL");
+    }
     check(offer.gpuCount === null || (Number.isSafeInteger(offer.gpuCount) && (offer.gpuCount as number) > 0), "GPU count");
     check(["available", "limited", "unavailable", "unknown"].includes(String(offer.availability)), "offer availability");
     check(offer.sourceAvailability !== "offline" || offer.availability === "unavailable", "offline availability");
@@ -198,7 +226,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     const source = row(entry, "source result"), provider = text(source.provider, "source provider");
     check(!seenSources.has(provider), "duplicate source"); seenSources.add(provider);
     url(source.url, "source URL");
-    if (provider === "reference") {
+    if (provider === "reference" && !scoped) {
       check(source.status === "reference" && source.offerCount === referenceCount, "reference source count");
       if (source.fetchedAt !== null) time(source.fetchedAt, ceiling, "reference timestamp");
     } else {
@@ -213,7 +241,8 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   const coverage = row(data.coverage, "coverage"), totals = row(coverage.totals, "coverage totals");
   check(coverage.schema_version === 1 && coverage.collection_status === "success" && coverage.scope === "returned_quotes", "coverage status");
   const summary = row(coverage.source_summary, "coverage sources");
-  check(summary.requested_count === 11 && summary.success_count === 11 && summary.failed_count === 0
+  const librarySourceCount = scoped ? FIVE_PROVIDERS.length : 11;
+  check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount && summary.failed_count === 0
     && summary.unknown_count === 0 && summary.no_matches_count === 0, "coverage source success");
   check(totals.returned_quotes === libraryIndices.size && totals.considered_quotes === libraryIndices.size
     && totals.excluded_quotes === 0 && list(coverage.excluded_quote_indices, "excluded quote indices").length === 0, "coverage quote counts");

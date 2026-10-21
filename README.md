@@ -10,12 +10,12 @@ Cloud GPU price-comparison site with Flatkey as its preferred commercial recomme
 - Sitemap and robots metadata
 - Standalone Next.js build and Docker image
 - Versioned dataset with source links, observation dates, and a fail-closed official-page collector
-- Flatkey appears first in the provider directory, with a service profile and quote-request CTAs carrying per-page UTM attribution
+- Flatkey retains a separate commercial service profile and quote-request CTAs carrying per-page UTM attribution
 - Sourced offer rows remain sorted by price; Flatkey has no invented price or inventory records
 
-RackRate consumes the reusable [GPU Price Monitor](https://github.com/flatkey-ai/gpu-price-monitor) Python library for Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda, EBCloud, Azure and Suanli, plus its existing anonymous Hyperstack collector. Public collection needs no cloud accounts, API keys or purchased GPU instances. The library only fetches and returns quotes; RackRate owns the schedule, storage, history and presentation.
+RackRate consumes the reusable [GPU Price Monitor](https://github.com/flatkey-ai/gpu-price-monitor) Python library for exactly five competitors: **Nebius, Crusoe, Lambda, UCloud and AutoDL**. Public collection needs no cloud accounts, API keys or purchased GPU instances. The library only fetches and returns quotes; RackRate owns the schedule, storage, history and presentation. Flatkey is a separate commercial recommendation, with no competitor price or inventory records.
 
-The GitHub Actions workflow starts once daily at **10:30 Asia/Shanghai (02:30 UTC)**. GitHub may queue scheduled runs. Tests, typechecking and a production build must succeed before data is committed. A failed or incomplete collection retains the last verified dataset. Dated Vast.ai and AWS references remain explicitly labeled and are excluded from current-price rankings; this public refresh does not use their credentials.
+The GitHub Actions workflow starts once daily at **10:30 Asia/Shanghai (02:30 UTC)**. GitHub may queue scheduled runs. Tests, typechecking and a production build must succeed before data is committed. A failed or incomplete collection retains the last verified dataset. The current board, provider index and GPU directory use only these five sources and models with current offers. Earlier observations stay in dated history and are not carried into a new current dataset.
 
 The running website reads the verified public `main/data/offers.json` snapshot at request time. After committing data, GitHub Actions warms the public status endpoint and verifies both its SHA-256 and the homepage's snapshot marker against the exact committed file bytes. A successful daily refresh therefore needs no Railway deployment token, CLI login, desktop computer or daily application deployment. Requests check for updates at most once per 60 seconds per server process; GitHub/CDN propagation can take several minutes, so verification retries for up to six minutes. If an upstream read fails or is invalid, the server keeps its last verified snapshot or bundled fallback and exposes that state instead of claiming a current publication.
 
@@ -72,6 +72,8 @@ bun run build
 On Linux, install Chromium system dependencies with `.venv/bin/python -m playwright install --with-deps chromium`. On Windows, use `.venv\Scripts\python.exe` and set `GPU_PRICE_MONITOR_PYTHON` to that executable if needed. An existing installation can be selected with `GPU_PRICE_MONITOR_PYTHON=/path/to/python`. No `.env` is required for public collection.
 
 The generated dataset preserves contact-sales entries, starting prices, membership requirements, Spot rates, component-only prices and offline promotions. Prices are converted to USD for display; original currency, billing unit, hardware configuration and price basis remain visible comparison dimensions. Provider catalogs do not establish live inventory. See [DATA.md](DATA.md) and [the daily runbook](docs/daily-pricing.md).
+
+The library's `price_scope`, `compute_countries` and `location_source` survive as `priceScope`, `computeCountries` and `locationSource` in RackRate offers. A platform footprint does not become a country-specific price; regional comparisons require a quote explicitly tied to that region or zone.
 
 See [DATA.md](DATA.md) for the freshness, normalization, and failure policy.
 

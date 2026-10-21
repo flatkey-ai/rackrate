@@ -74,6 +74,17 @@ test("membership is explicit, ordinary source caveats do not become member or co
   assert.equal(hasAdditionalEligibility(quote({ conditions: ["No minimum commitment"] })), false);
 });
 
+test("account-specific quote amounts remain inspectable but cannot claim a public regular minimum", () => {
+  const account = quote({ id: "account-price", accountScope: "account_quote", priceUsdPerGpuUnit: 0.1 });
+  const publicRate = quote({ id: "public-rate", accountScope: "public_catalog", priceUsdPerGpuUnit: 2 });
+  assert.equal(offerAudience(account), "conditional");
+  assert.equal(isLowestPriceCandidate(account), false);
+  const group = groupOffersForComparison([account, publicRate])[0];
+  assert.equal(group.offers.length, 2);
+  assert.deepEqual(group.buckets[0].lowestRegularIds, ["public-rate"]);
+  assert.deepEqual(summarizeComparisonGroup(group)[0].lowestRegularOffers.map((offer) => offer.id), ["public-rate"]);
+});
+
 test("period, procurement model, memory, board variant and component basis each create separate comparison buckets", () => {
   const baseline = quote();
   const variants: Partial<Offer>[] = [

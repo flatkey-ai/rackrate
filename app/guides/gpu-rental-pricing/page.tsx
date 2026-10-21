@@ -116,7 +116,7 @@ export default async function GpuRentalPricingGuide() {
               <Link href="/gpus/nvidia-a100"><span>Mature cloud capacity</span><strong>A100 GPU rental prices</strong><small>USD on-demand {formatBenchmarkPrice(a100)}/GPU/hr →</small></Link>
               <Link href="/gpus/nvidia-b200"><span>Blackwell capacity</span><strong>NVIDIA B200 rental prices</strong><small>180 GB HBM3e →</small></Link>
             </div>
-            <div className="guide-note"><strong>Looking for B300?</strong><p>RackRate does not yet have a source-backed B300 rental price. You can include B300 in a Flatkey capacity request, but availability and price must be confirmed in a formal quote.</p></div>
+            <div className="guide-note"><strong>Looking for B300?</strong><p>See the <Link href="/gpus/nvidia-b300">B300 rental price listings</Link> for current source-backed observations. Compare GPU variants, configuration and purchase conditions; a published price does not confirm available capacity.</p></div>
           </section>
 
           <section id="purchase">
