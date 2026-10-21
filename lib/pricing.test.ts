@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Offer } from "./data";
 
-const { cheapestComparableOffer, compareOffers, formatOfferPrice, formatInstancePrice, formatOriginalPrice, isComparableUsdHourly, hasEligibilityConditions } = await import(new URL("./pricing.ts", import.meta.url).href);
+const { cheapestComparableOffer, compareOffers, formatOfferPrice, formatInstancePrice, formatOriginalPrice, isComparableUsdHourly, hasEligibilityConditions, cloudTierLabel, isAccountSpecificPrice, summaryConfigurationLabel } = await import(new URL("./pricing.ts", import.meta.url).href);
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "ordinary", gpuSlug: "nvidia-h100", providerSlug: "example", gpuCount: null, gpuVariant: null, vramGb: null,
   pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "Not published", regions: [], zones: [], countryCode: "",
@@ -16,6 +16,29 @@ test("eligibility badges and filtering retain regional and membership restrictio
   assert.equal(hasEligibilityConditions(member), true);
   assert.equal(hasEligibilityConditions(quote()), false);
   assert.equal(isComparableUsdHourly(member), false);
+});
+
+test("collapsed price configurations disclose the cloud tier alongside published hardware", () => {
+  const hardware = { gpuCount: 8, gpuVariant: "SXM", vramGb: 141 };
+  assert.equal(summaryConfigurationLabel(quote({ ...hardware, cloudTier: "community" })),
+    "Community Cloud · 141 GB · SXM · 8× GPU node");
+  assert.equal(summaryConfigurationLabel(quote({ ...hardware, cloudTier: "secure" })),
+    "Secure Cloud · 141 GB · SXM · 8× GPU node");
+  assert.equal(cloudTierLabel(quote({ cloudTier: "secure_cloud" })), "Secure Cloud");
+  assert.equal(cloudTierLabel(quote()), null);
+  assert.equal(summaryConfigurationLabel(quote()), "Configuration not published");
+  const tied = ["community", "secure"].map((cloudTier) => summaryConfigurationLabel(quote({ ...hardware, cloudTier })));
+  assert.equal(new Set(tied).size, 2);
+});
+
+test("account-specific price conditions are explicit and excluded from public summary benchmarks", () => {
+  const account = quote({ accountScope: "account_quote", pricePerGpuHour: 0.01 });
+  assert.equal(isAccountSpecificPrice(account), true);
+  assert.equal(hasEligibilityConditions(account), true);
+  assert.equal(isComparableUsdHourly(account), false);
+  assert.equal(summaryConfigurationLabel(account), "Account-specific quote");
+  assert.equal(cheapestComparableOffer([account, quote()])?.id, "ordinary");
+  assert.equal(isAccountSpecificPrice(quote({ accountScope: "public_catalog" })), false);
 });
 
 test("USD on-demand benchmarks exclude incompatible and ineligible cheaper quotes", () => {

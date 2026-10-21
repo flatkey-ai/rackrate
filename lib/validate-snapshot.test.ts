@@ -6,6 +6,29 @@ const { validatePricingDataset } = await import(new URL("./validate-snapshot.ts"
 const original = JSON.parse(readFileSync(new URL("../data/offers.json", import.meta.url), "utf8"));
 const observed = Date.parse(original.generatedAt);
 const fresh = () => structuredClone(original);
+const tracked = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
+
+function fiveProviderSnapshot() {
+  const data = fresh();
+  data.collector.providers = [...tracked];
+  data.offers = data.offers.filter((offer: { providerSlug: string; dataStatus: string }) => tracked.includes(offer.providerSlug) && offer.dataStatus === "official-page");
+  data.sources = data.sources.filter((source: { provider: string }) => tracked.includes(source.provider));
+  const indices = new Map<number, number>();
+  data.offers.forEach((offer: { sourceQuoteIndex: number }, index: number) => {
+    indices.set(offer.sourceQuoteIndex, index);
+    offer.sourceQuoteIndex = index;
+  });
+  for (const model of [...data.coverage.models, ...data.coverage.extra_models]) {
+    model.quote_indices = model.quote_indices.filter((index: number) => indices.has(index)).map((index: number) => indices.get(index));
+    model.quote_count = model.quote_indices.length;
+  }
+  data.coverage.totals.returned_quotes = data.coverage.totals.considered_quotes = data.offers.length;
+  data.coverage.source_summary.requested_count = data.coverage.source_summary.success_count = tracked.length;
+  const gpuSlugs = new Set(data.offers.map((offer: { gpuSlug: string }) => offer.gpuSlug));
+  data.generatedCatalog.gpus = data.generatedCatalog.gpus.filter((gpu: { slug: string }) => gpuSlugs.has(gpu.slug));
+  data.generatedCatalog.providers = data.generatedCatalog.providers.filter((provider: { slug: string }) => tracked.includes(provider.slug));
+  return data;
+}
 
 test("real published snapshot validates without changing any price or object identity", () => {
   const input = fresh();
@@ -28,12 +51,45 @@ test("missing, failed, duplicated and miscounted public sources cannot replace a
     (data) => { data.sources.find((entry: { provider: string }) => entry.provider === "autodl").status = "failed"; },
     (data) => { data.sources.push(structuredClone(data.sources[1])); },
     (data) => { data.sources[1].offerCount += 1; },
-    (data) => { data.sources = data.sources.filter((entry: { provider: string }) => entry.provider !== "hyperstack"); },
+    (data) => { data.sources = data.sources.filter((entry: { provider: string }) => entry.provider !== "lambda"); },
   ];
   for (const mutate of mutations) {
     const input = fresh(); mutate(input);
     assert.throws(() => validatePricingDataset(input, observed), /source/);
   }
+});
+
+test("an explicit five-provider snapshot validates and excludes every discontinued source", () => {
+  const data = fiveProviderSnapshot();
+  const before = JSON.stringify(data);
+  assert.equal(validatePricingDataset(data, observed), data);
+  assert.equal(JSON.stringify(data), before);
+  for (const mutate of [
+    (value: typeof original) => { value.collector.providers.push("runpod"); },
+    (value: typeof original) => { value.collector.providers[0] = "runpod"; },
+    (value: typeof original) => { value.collector.providers[0] = value.collector.providers[1]; },
+    (value: typeof original) => { value.generatedCatalog.providers.push({ slug: "hyperstack", name: "Hyperstack", website: "https://example.com" }); },
+    (value: typeof original) => { value.offers[0].dataStatus = "seed"; },
+    (value: typeof original) => { value.sources.push({ provider: "reference", status: "reference", url: "https://example.com", offerCount: 0 }); },
+  ]) {
+    const invalid = fiveProviderSnapshot(); mutate(invalid);
+    assert.throws(() => validatePricingDataset(invalid, observed));
+  }
+});
+
+test("location provenance cannot turn platform coverage into a verified country price", () => {
+  const data = fiveProviderSnapshot();
+  const offer = data.offers.find((entry: { providerSlug: string }) => entry.providerSlug === "nebius");
+  offer.priceScope = "platform_coverage";
+  offer.computeCountries = [];
+  offer.countryCode = "";
+  offer.locationSource = { api_url: "https://api.ucloud.cn/" };
+  assert.equal(validatePricingDataset(data, observed), data);
+  offer.computeCountries = ["FI"];
+  assert.throws(() => validatePricingDataset(data, observed), /country price/);
+  offer.computeCountries = [];
+  offer.locationSource.api_url = "javascript:alert(1)";
+  assert.throws(() => validatePricingDataset(data, observed), /location source URL/);
 });
 
 test("bad collector identities, schema versions and future or invalid timestamps fail", () => {
@@ -87,7 +143,7 @@ test("source decimals, dollar amounts, nulls and exchange-rate provenance must a
     (data) => { data.fx.sourceUrl = "https://unverified.example/rates"; },
     (data) => { data.fx.ratesToUsd.CNY = "1"; },
     (data) => { data.offers[0].fx.rateDate = "2026-10-18"; },
-    (data) => { data.offers[0].fx.converted = true; },
+    (data) => { data.offers[0].fx.converted = !data.offers[0].fx.converted; },
     (data) => { data.offers.find((entry: { instancePrice?: number }) => entry.instancePrice != null).instancePriceUsd += 1; },
   ];
   for (const mutate of mutations) {

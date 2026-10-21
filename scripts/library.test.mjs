@@ -36,21 +36,17 @@ function fixture(additional = []) {
     },
   };
 }
-const additional = {
-  observedAt, url: "https://www.hyperstack.cloud/gpu-pricing",
-  offers: [{
-    id: "hyper-h100", gpuSlug: "nvidia-h100", providerSlug: "hyperstack", gpuCount: 1,
-    pricePerGpuHour: 2.5, sourceCurrency: "USD", billingUnit: "GPU-hour", region: "Global",
-    countryCode: "GL", availability: "unknown", sourceUrl: "https://www.hyperstack.cloud/gpu-pricing",
-    observedAt, dataStatus: "official-page",
-  }],
-};
+test("the scheduled collector requires exactly the five selected competitors", () => {
+  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl"]);
+});
 
 test("native currency, period, explicit geography and unavailable status survive ingestion", () => {
   const result = fixture();
   Object.assign(result.prices[3], {
     amount: "467.7900", currency: "CNY", unit: "gpu_month", billing_mode: "monthly",
     gpu_count: 4, regions: ["cn-wlcb"], zones: ["cn-wlcb-01"], location: { country_code: "CN" },
+    compute_countries: ["CN"], price_scope: "zone_quote",
+    location_source: { api_url: "https://api.ucloud.cn/", country_field: "CountryCode" },
     availability: "offline", instance_price: { amount: "1871.16", currency: "CNY", unit: "instance_month" },
     resources: { vcpu_count: 32, memory_mb: 131072 },
     promotion: { activity_id: "test", title: "Public GPU promotion", only_new_users: true, purchase_limit: 3, eligibility_verified: false },
@@ -69,6 +65,9 @@ test("native currency, period, explicit geography and unavailable status survive
   assert.deepEqual(row.regions, ["cn-wlcb"]);
   assert.deepEqual(row.zones, ["cn-wlcb-01"]);
   assert.equal(row.countryCode, "CN");
+  assert.deepEqual(row.computeCountries, ["CN"]);
+  assert.equal(row.priceScope, "zone_quote");
+  assert.deepEqual(row.locationSource, result.prices[3].location_source);
   assert.equal(row.instancePrice, 1871.16);
   assert.equal(row.instanceBillingUnit, "instance-month");
   assert.equal(row.promotion.eligibility_verified, false);
@@ -85,7 +84,7 @@ test("contact-sales rows, starting prices, memberships and cloud tiers remain ex
   const result = fixture();
   Object.assign(result.prices[1], { amount: null, quote_status: "contact_sales" });
   Object.assign(result.prices[4], { price_basis: "starting_price", quote_status: "starting_at", pricing_tier: "member", membership_required: true });
-  result.prices[5].cloud_tier = "community";
+  result.prices[2].cloud_tier = "community";
   const { offers } = normalizeLibraryResult(result);
   assert.equal(offers[1].pricePerGpuUnit, null);
   assert.equal(offers[1].pricePerGpuHour, null);
@@ -93,7 +92,7 @@ test("contact-sales rows, starting prices, memberships and cloud tiers remain ex
   assert.equal(offers[4].priceBasis, "starting_price");
   assert.equal(offers[4].quoteStatus, "starting_at");
   assert.ok(offers[4].conditions.includes("Membership required; eligibility not verified"));
-  assert.ok(offers[5].conditions.includes("Cloud tier: community"));
+  assert.ok(offers[2].conditions.includes("Cloud tier: community"));
 });
 
 test("stable IDs survive price, observation, stock and key-order changes", () => {
@@ -104,6 +103,10 @@ test("stable IDs survive price, observation, stock and key-order changes", () =>
   source.observed_at = "2026-10-21T08:00:00Z";
   source.availability = "offline";
   source.effective_from = "2026-10-21";
+  // Enriching the same source SKU with provenance does not create a new tariff.
+  source.price_scope = "unlocated_catalog";
+  source.compute_countries = [];
+  source.location_source = { api_url: "https://example.com/source-directory" };
   result.prices[0] = Object.fromEntries(Object.entries(source).reverse());
   assert.equal(normalizeLibraryResult(result).offers[0].id, before);
 });
@@ -193,7 +196,7 @@ test("Python bridge uses explicit public Settings rather than dotenv or process 
   assert.equal(captured[0], "/custom/python");
   assert.deepEqual(captured[1], ["-c", PYTHON_COLLECTION_CODE]);
   assert.ok(PYTHON_COLLECTION_CODE.includes(`__version__ != "${LIBRARY_VERSION}"`));
-  assert.ok(PYTHON_COLLECTION_CODE.includes('collect_prices("all", settings=Settings(), include_coverage=True)'));
+  assert.ok(PYTHON_COLLECTION_CODE.includes(`collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)`));
   assert.ok(!PYTHON_COLLECTION_CODE.includes("from_env"));
   await assert.rejects(collectPublicLibrary({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
 });
@@ -205,23 +208,39 @@ test("Python selection prefers explicit path then clone-local venv over global P
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: () => false }), "python3");
 });
 
-test("dataset replaces obsolete collectors and preserves explicit dated references only", () => {
-  const reference = { ...additional.offers[0], id: "dated-reference", providerSlug: "vast-ai", dataStatus: "seed" };
-  const output = buildRackRateDataset({ offers: [reference, { ...reference, id: "obsolete", dataStatus: "official-page" }] }, fixture(), additional);
+test("current dataset contains only this five-provider collection and never reobserves old offers", () => {
+  const references = ["vast-ai", "aws", "hyperstack", "runpod", "flatkey"].map((providerSlug) => ({
+    id: `dated-${providerSlug}`, providerSlug, dataStatus: "seed", observedAt: "2020-01-01T00:00:00Z",
+  }));
+  const current = { offers: [...references, { id: "obsolete", providerSlug: "nebius", dataStatus: "official-page" }] };
+  const before = JSON.stringify(current);
+  const output = buildRackRateDataset(current, fixture());
   assert.equal(output.schemaVersion, 2);
-  assert.equal(output.offers.length, 13);
-  assert.ok(output.offers.some((offer) => offer.id === "dated-reference" && offer.dataStatus === "seed"));
+  assert.equal(output.offers.length, 5);
+  assert.ok(output.offers.every((offer) => REQUIRED_PROVIDERS.includes(offer.providerSlug) && offer.dataStatus === "official-page"));
   assert.ok(!output.offers.some((offer) => offer.id === "obsolete"));
-  assert.equal(output.sources.filter((source) => source.status === "ok").length, 12);
+  assert.deepEqual(output.sources.map((source) => source.provider).sort(), [...REQUIRED_PROVIDERS].sort());
+  assert.equal(output.generatedAt, observedAt);
   assert.equal(output.collector.mode, "public-only");
-  assert.equal(output.offers.find((offer) => offer.providerSlug === "hyperstack").countryCode, "");
+  assert.equal(JSON.stringify(current), before);
+});
+
+test("platform coverage cannot supply a country-price label even when old location metadata is present", () => {
+  const result = fixture();
+  Object.assign(result.prices[0], { regions: ["eu-north1"], compute_countries: ["FI"],
+    location: { country_code: "FI" }, price_scope: "platform_coverage" });
+  const row = normalizeLibraryResult(result).offers[0];
+  assert.equal(row.priceScope, "platform_coverage");
+  assert.deepEqual(row.computeCountries, []);
+  assert.equal(row.countryCode, "");
+  assert.deepEqual(row.regions, ["eu-north1"]);
 });
 
 test("USD conversion preserves native prices and periods and requires matching provenance", () => {
   const result = fixture();
   Object.assign(result.prices[3], { amount: "80", currency: "CNY", unit: "gpu_month", billing_mode: "monthly", availability: "offline" });
   Object.assign(result.prices[4], { amount: "8", currency: "CNY" });
-  const original = buildRackRateDataset({ offers: [] }, result, additional);
+  const original = buildRackRateDataset({ offers: [] }, result);
   const output = convertDatasetToUsd(original, rates);
   validateOffers(output.offers, { requireUsd: true, rates });
   const month = output.offers.find((offer) => offer.providerSlug === "ucloud");
@@ -247,7 +266,7 @@ test("refresh aborts before any write when a required public source fails", asyn
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result, collectAdditional: async () => additional,
+    collect: async () => result,
     collectRates: async () => rates,
     write: async () => { writes++; },
   }), /Required public source failed/);
@@ -258,7 +277,7 @@ test("refresh aborts before any write when FX rates cannot be verified", async (
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => fixture(), collectAdditional: async () => additional,
+    collect: async () => fixture(),
     collectRates: async () => { throw new Error("ECB rate source unavailable"); },
     write: async () => { writes++; },
   }), /ECB rate source unavailable/);
@@ -271,7 +290,7 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   const result = fixture();
   await refreshPrices({
     directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result, collectAdditional: async () => additional,
+    collect: async () => result,
     collectRates: async () => rates,
     write: async (path, body) => files.set(path, JSON.parse(body)),
     move: async (from, to) => publications.push([from, to]), remove: async () => {},

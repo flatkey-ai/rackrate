@@ -45,6 +45,9 @@ const mappings: Record<string, Record<string, RegionMapping>> = {
 
 type LocatedOffer = Pick<Offer, "providerSlug" | "region" | "regions" | "countryCode"> & {
   location?: Record<string, unknown> | null;
+  computeCountries?: string[];
+  locationSource?: Record<string, unknown> | null;
+  priceScope?: string | null;
 };
 
 const unpublished = /^(?:not published|unknown|unspecified|n\/?a)$/i;
@@ -64,19 +67,24 @@ export function publishedRegionCodes(offer: Pick<Offer, "region" | "regions">): 
 /** A platform's supported regions do not make its generic catalog rate a quote
  * for each of those regions. Keep coverage discoverable, but out of regional
  * price minima until the source actually binds the rate to a location. */
-export function isRegionSpecificPrice(offer: Pick<Offer, "region" | "regions" | "conditions" | "dataStatus">): boolean {
+export function isRegionSpecificPrice(offer: Pick<Offer, "region" | "regions" | "conditions" | "dataStatus" | "priceScope">): boolean {
+  if (offer.priceScope) return offer.dataStatus === "official-page"
+    && ["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)
+    && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code));
   return offer.dataStatus === "official-page"
     && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code))
     && !offer.conditions.some((condition) => /\bnot a region-specific price quote\b/i.test(condition));
 }
 
 export function getOfferCountryCodes(offer: LocatedOffer): string[] {
+  if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return [];
   const explicit = /^[A-Z]{2}$/.test(offer.countryCode) && !["EU", "GL"].includes(offer.countryCode) ? [offer.countryCode] : [];
+  const declared = (offer.computeCountries ?? []).filter((code) => /^[A-Z]{2}$/.test(code) && !["EU", "GL"].includes(code));
   const mapped = publishedRegionCodes(offer).flatMap((code) => {
     const country = mappingFor(offer.providerSlug, code)?.country;
     return country ? [country] : [];
   });
-  return [...new Set([...explicit, ...mapped])];
+  return [...new Set([...explicit, ...declared, ...mapped])];
 }
 
 /** Narrow the codes on a multi-region record to the selected country. A known
@@ -86,7 +94,8 @@ export function getOfferCountryCodes(offer: LocatedOffer): string[] {
 export function publishedRegionsForCountry(offer: LocatedOffer, country: string): string[] {
   const codes = publishedRegionCodes(offer);
   if (country === "all") return codes;
-  const explicit = offer.countryCode === country && !["EU", "GL"].includes(country);
+  const explicit = (offer.countryCode === country || (offer.computeCountries?.length === 1 && offer.computeCountries[0] === country))
+    && !["EU", "GL"].includes(country);
   const explicitIsConsistent = explicit && codes.every((code) => {
     const mapped = mappingFor(offer.providerSlug, code)?.country;
     return mapped === undefined || mapped === country;
@@ -118,6 +127,7 @@ export function publishedZonesForSelection(offer: LocatedOffer & Pick<Offer, "zo
 }
 
 export function offerMatchesRegion(offer: LocatedOffer, region: Pick<RegionProfile, "countryCodes" | "regionNames">): boolean {
+  if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return false;
   if (offer.countryCode && region.countryCodes.includes(offer.countryCode)) return true;
   const codes = publishedRegionCodes(offer);
   if (region.regionNames.includes(offer.region) || codes.some((code) => region.regionNames.includes(code))) return true;
@@ -134,8 +144,12 @@ export function publishedRegionLabel(offer: LocatedOffer, code: string): string 
 }
 
 export function regionMappingSources(offers: readonly LocatedOffer[]): string[] {
-  return [...new Set(offers.flatMap((offer) => publishedRegionCodes(offer).flatMap((code) => {
-    const source = mappingFor(offer.providerSlug, code)?.sourceUrl;
-    return source ? [source] : [];
-  })))];
+  return [...new Set(offers.flatMap((offer) => {
+    const direct = offer.locationSource?.source_url ?? offer.locationSource?.api_url;
+    const source = typeof direct === "string" && /^https:\/\//.test(direct) ? [direct] : [];
+    return [...source, ...publishedRegionCodes(offer).flatMap((code) => {
+      const mapped = mappingFor(offer.providerSlug, code)?.sourceUrl;
+      return mapped ? [mapped] : [];
+    })];
+  }))];
 }
