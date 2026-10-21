@@ -1,4 +1,5 @@
 import { cheapestComparableOffer } from "./pricing.ts";
+import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from "./region-matching.ts";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
@@ -62,6 +63,7 @@ export type Offer = {
   zones: string[];
   geographicScope?: string;
   regionScope?: string;
+  location?: Record<string, unknown> | null;
   countryCode: string;
   availability: Availability;
   egress: string;
@@ -255,9 +257,9 @@ export const regions: RegionProfile[] = [
     label: "Canadian GPU cloud",
     countryCodes: ["CA"],
     regionNames: ["Canada"],
-    summary: "Plan a Canadian GPU deployment: review location, replacement capacity and quote requirements. Pricing coverage is shown below when records are available.",
+    summary: "Compare source-published Canadian GPU rates by cloud-region code, configuration and purchase terms.",
     bestFor: "Teams that require a Canadian deployment location and need to confirm facility, capacity and procurement terms.",
-    marketContext: "Canada can be a useful shortlist for teams that want data and users to remain in-country, but RackRate has limited pricing coverage for this market. Treat the page as a procurement checklist until more providers expose verifiable Canadian price and inventory data.",
+    marketContext: "Canadian regional rates are grouped from the location attached to each quote, including explicitly identified cloud-region codes. The country grouping does not make Toronto, Quebec or different providers interchangeable: retain the exact region and configuration when comparing prices.",
     buyingQuestions: [
       "Which Canadian datacenter and availability zone will host the GPUs?",
       "Is the quoted rate a firm on-demand price or a manually observed reference price?",
@@ -293,7 +295,7 @@ export const regions: RegionProfile[] = [
     slug: "europe",
     name: "Europe",
     label: "European GPU cloud",
-    countryCodes: ["EU", "FI"],
+    countryCodes: ["EU", "FI", "IS", "FR", "DE", "GB", "IE", "SE", "NL", "PL", "IT", "ES", "NO", "DK", "AT", "BE", "CH"],
     regionNames: ["Europe", "Finland"],
     summary: "Compare indexed European GPU offers and check the country, purchase terms and data-transfer costs behind each rate.",
     bestFor: "Workloads that benefit from a European deployment footprint or need to shortlist region-specific infrastructure.",
@@ -315,9 +317,9 @@ export const regions: RegionProfile[] = [
     label: "India GPU cloud",
     countryCodes: ["IN"],
     regionNames: ["India"],
-    summary: "Review dated GPU price observations for India and the location and capacity questions to resolve before deployment.",
+    summary: "Compare source-published GPU rates for Indian cloud regions, with dated references identified separately.",
     bestFor: "Teams prioritizing an India deployment footprint or testing regional capacity close to South Asian users and data.",
-    marketContext: "RackRate has limited pricing coverage for India. A dated marketplace observation is a starting point for research; it cannot establish a dependable regional price floor or current supply for production scale-out.",
+    marketContext: "The India index retains the exact source region, such as Central India or South India, alongside GPU configuration and purchase model. An on-demand rate and an interruptible Spot rate remain different offers. Neither a catalog rate nor a dated marketplace reference verifies current capacity.",
     buyingQuestions: [
       "Can the provider confirm the physical Indian location and network path?",
       "Is matching replacement capacity available if the listed host disappears?",
@@ -327,6 +329,86 @@ export const regions: RegionProfile[] = [
       "A single listing is a market signal, not proof of durable regional supply; confirm replacement capacity and lead time.",
       "Multi-GPU nodes should be compared on total node cost as well as the normalized per-GPU figure.",
       "Verify interconnect, storage throughput, and network quotas before treating a cluster as training-ready.",
+    ],
+  },
+  {
+    slug: "china",
+    name: "China",
+    label: "China GPU cloud",
+    countryCodes: ["CN"],
+    regionNames: ["China"],
+    summary: "Compare explicitly located Chinese GPU listings, preserving source region and availability-zone codes, monthly units and offline status.",
+    bestFor: "Buyers comparing China deployments with a specific region, availability zone and billing period in mind.",
+    marketContext: "A published China listing may remain in the catalog after it goes offline. Offline records are retained for research and never establish a rentable lowest price. Monthly prices stay per GPU-month; the page does not convert them into hourly prices or infer a currently orderable offer.",
+    buyingQuestions: [
+      "Is the exact region and availability zone still accepting new GPU orders?",
+      "Does the quoted amount cover a full node, only the GPU component, or a monthly package?",
+      "Which tax, storage, bandwidth and account requirements apply to this configuration?",
+    ],
+    planningNotes: [
+      "Keep the provider's original region and zone codes when comparing quotes.",
+      "Treat offline catalog entries as historical market context rather than available supply.",
+      "Compare matching billing periods and node sizes before choosing a price.",
+    ],
+  },
+  {
+    slug: "asia-pacific",
+    name: "Asia Pacific",
+    label: "Asia Pacific GPU regions",
+    countryCodes: ["AU", "NZ", "JP", "KR", "SG", "MY", "ID", "TH", "PH", "VN", "HK", "TW", "IN", "CN"],
+    regionNames: ["Asia Pacific"],
+    summary: "Explore source-located GPU prices across Asia Pacific while keeping each quote's country, cloud region and purchase terms visible.",
+    bestFor: "Teams shortlisting regional capacity near Asia Pacific users, datasets or operations.",
+    marketContext: "Asia Pacific is a navigation group, not a single deployment location or uniform regional tariff. Each returned quote retains its specific provider region code. Prices in Japan, Singapore, Australia, India and China must be compared with the relevant location and billing terms in view.",
+    buyingQuestions: [
+      "Which country and provider region does this particular price cover?",
+      "Are network transfer, storage and local taxes included in the quoted amount?",
+      "Can the provider confirm capacity and the latency to the intended users?",
+    ],
+    planningNotes: [
+      "Select an exact cloud region in the price board before comparing a deployment shortlist.",
+      "A broad market grouping does not make its countries or facilities interchangeable.",
+      "Keep offline, Spot, member and monthly offers separate from ordinary hourly rates.",
+    ],
+  },
+  {
+    slug: "middle-east",
+    name: "Middle East",
+    label: "Middle East GPU regions",
+    countryCodes: ["IL", "AE", "QA", "SA", "BH", "OM", "JO"],
+    regionNames: ["Middle East"],
+    summary: "Review GPU prices attached to explicit Middle East cloud regions, with each source region and rate condition retained.",
+    bestFor: "Workloads that need a specific Middle East deployment country or cloud region.",
+    marketContext: "This market index groups explicitly located quotes for navigation. It does not apply a rate from one country or provider to another. A provider's headquarters, billing country or customer eligibility requirement does not establish where its GPU price is available.",
+    buyingQuestions: [
+      "Which source region and physical deployment country are included in this rate?",
+      "Does the price require a specific customer entity or account eligibility?",
+      "Which availability, network and data-residency terms need direct confirmation?",
+    ],
+    planningNotes: [
+      "Use each offer's source region rather than its provider's company address.",
+      "Customer eligibility and deployment location are separate facts.",
+      "Compare equivalent billing plans and configurations within the intended region.",
+    ],
+  },
+  {
+    slug: "latin-america",
+    name: "Latin America",
+    label: "Latin America GPU regions",
+    countryCodes: ["BR", "MX", "CL", "AR", "CO", "PE"],
+    regionNames: ["Latin America"],
+    summary: "Review GPU prices attached to explicit Latin American cloud regions and compare their published configurations and terms.",
+    bestFor: "Teams evaluating source-located capacity near Latin American users and data.",
+    marketContext: "Latin America is a market index, not one cloud region or common tariff. Listings keep the original region code and provider. A published price does not establish inventory, local checkout totals, or a price in any other country within this grouping.",
+    buyingQuestions: [
+      "Which country and cloud region does this listing identify?",
+      "Are local taxes, storage and network transfers included in the final charge?",
+      "Is the configuration available at the required quantity and start date?",
+    ],
+    planningNotes: [
+      "Retain the provider region code when asking for a confirmed quote.",
+      "Compare Spot and ordinary on-demand prices separately.",
+      "Include data movement and replacement capacity in regional cost estimates.",
     ],
   },
   {
@@ -405,9 +487,7 @@ export function createPricingData(dataset: PricingDataset) {
   const getOffersForRegion = (slug: string) => {
     const region = getRegion(slug);
     if (!region) return [];
-    return offers.filter(
-      (offer) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region) || offer.regions.some((name) => region.regionNames.includes(name)),
-    );
+    return offers.filter((offer) => offerMatchesRegion(offer, region));
   };
   function getRegionCoverage(slug: string) {
     const regionOffers = getOffersForRegion(slug);
@@ -416,6 +496,11 @@ export function createPricingData(dataset: PricingDataset) {
       offerCount: regionOffers.length,
       officialCount,
       referenceCount: regionOffers.length - officialCount,
+      offlineCount: regionOffers.filter((offer) => offer.availability === "unavailable").length,
+      regionalPriceCount: regionOffers.filter(isRegionSpecificPrice).length,
+      coverageOnlyCount: regionOffers.filter((offer) => offer.dataStatus === "official-page"
+        && publishedRegionCodes(offer).some((code) => !/^global(?: listings)?$/i.test(code))
+        && !isRegionSpecificPrice(offer)).length,
     };
   }
   function isRegionIndexable(slug: string) {
@@ -423,9 +508,7 @@ export function createPricingData(dataset: PricingDataset) {
     return coverage.offerCount >= 3 && coverage.officialCount >= 1;
   }
   const getRegionForOffer = (offer: Offer) =>
-    regions.find(
-      (region) => region.countryCodes.includes(offer.countryCode) || region.regionNames.includes(offer.region) || offer.regions.some((name) => region.regionNames.includes(name)),
-    );
+    regions.find((region) => offerMatchesRegion(offer, region));
 
   function getCheapestOffer(gpuSlug?: string) {
     return cheapestComparableOffer(gpuSlug ? getOffersForGpu(gpuSlug) : offers);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Offer } from "./data";
 
-const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate, summarizeComparisonGroup } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
+const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate, summarizeComparisonGroup, matchesPriceRegionFilter, priceRegionCoverage } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "regular", gpuSlug: "nvidia-rtx-4090", providerSlug: "example", gpuCount: 1, gpuVariant: null, vramGb: 24,
@@ -20,6 +20,36 @@ test("canonical GPU grouping puts platforms together and sorts compatible prices
   assert.deepEqual(group.offers.map((offer: Offer) => offer.id), ["low", "middle", "high"]);
   assert.deepEqual(group.buckets[0].lowestRegularIds, ["low"]);
   assert.deepEqual(input.map((offer) => offer.id), before);
+});
+
+test("regional filters recalculate minima without attaching a region to the cheaper catalog quote", () => {
+  const input = [
+    quote({ id: "catalog", priceUsdPerGpuUnit: 1 }),
+    quote({ id: "us", providerSlug: "azure", regions: ["eastus2"], priceUsdPerGpuUnit: 2 }),
+    quote({ id: "eu", providerSlug: "nebius", regions: ["eu-north1", "eu-west1"], priceUsdPerGpuUnit: 3 }),
+    quote({ id: "reference", dataStatus: "seed", regions: ["Canada"], priceUsdPerGpuUnit: 0.1 }),
+  ];
+  assert.deepEqual(priceRegionCoverage(input), { offerCount: 2, providerCount: 2, regionCount: 3, unspecifiedCount: 1 });
+  assert.deepEqual(summarizeComparisonGroup(groupOffersForComparison(input)[0])[0].lowestRegularOffers.map((offer) => offer.id), ["catalog"]);
+  const published = input.filter((offer) => matchesPriceRegionFilter(offer, "__published"));
+  assert.deepEqual(summarizeComparisonGroup(groupOffersForComparison(published)[0])[0].lowestRegularOffers.map((offer) => offer.id), ["us"]);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "eu-north1")).map((offer) => offer.id), ["eu"]);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "__unpublished")).map((offer) => offer.id), ["catalog"]);
+  assert.deepEqual(input[0].regions, []);
+});
+
+test("regional minima exclude platform availability lists while retaining those catalog prices for inspection", () => {
+  const input = [
+    quote({ id: "coverage", providerSlug: "nebius", regions: ["eu-north1"], priceUsdPerGpuUnit: 1,
+      conditions: ["Published platform availability is not a region-specific price quote."] }),
+    quote({ id: "regional", providerSlug: "azure", regions: ["swedencentral"], priceUsdPerGpuUnit: 2 }),
+  ];
+  const catalog = groupOffersForComparison(input)[0];
+  assert.deepEqual(summarizeComparisonGroup(catalog)[0].lowestRegularOffers.map((offer) => offer.id), ["coverage"]);
+  const regional = groupOffersForComparison(input, { requireRegionalPrice: true })[0];
+  assert.equal(regional.offers.length, 2);
+  assert.deepEqual(summarizeComparisonGroup(regional)[0].lowestRegularOffers.map((offer) => offer.id), ["regional"]);
+  assert.deepEqual(regional.buckets[0].lowestRegularIds, ["regional"]);
 });
 
 test("regular and member minima stay separate, support ties, and exclude extra eligibility", () => {

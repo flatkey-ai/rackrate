@@ -5,12 +5,13 @@ import Link from "next/link";
 import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
+import { isRegionSpecificPrice } from "@/lib/region-matching";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "GPU cloud regions and rental prices",
   description:
-    "Compare sourced GPU cloud prices and capacity observations across Canada, the United States, Europe, India, and global listings.",
+    "Compare sourced GPU cloud prices across China, Canada, the United States, Europe, India, Asia Pacific, the Middle East and Latin America.",
   alternates: { canonical: absoluteUrl("/regions") },
   openGraph: {
     title: "GPU cloud regions and rental prices",
@@ -47,12 +48,12 @@ export default async function RegionsIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Indexed markets</span><h2>Regional price signals, with their limits visible.</h2></div>
-          <p>Some offers use a country or cloud-region label; others are listed globally. Open a page to see exactly which source labels are grouped into that market and how much sourced coverage exists.</p>
+          <p>Markets group listings by their published country or documented provider-region code. Regional prices and platform coverage are counted separately. A platform's supported regions do not establish a price for each location, and platform coverage rates never set a regional benchmark.</p>
         </div>
         <div className="region-grid">
-          {regions.map((region, index) => {
+          {regions.filter((region) => getRegionCoverage(region.slug).offerCount > 0).map((region, index) => {
             const regionOffers = getOffersForRegion(region.slug);
-            const floor = cheapestComparableOffer(regionOffers);
+            const floor = cheapestComparableOffer(regionOffers.filter(isRegionSpecificPrice));
             const gpuCount = new Set(regionOffers.map((offer) => offer.gpuSlug)).size;
             const providerCount = new Set(regionOffers.map((offer) => offer.providerSlug)).size;
             const cheapestGpu = floor ? getGpu(floor.gpuSlug) : undefined;
@@ -67,9 +68,11 @@ export default async function RegionsIndexPage() {
                   <span>{regionOffers.length} offer{regionOffers.length === 1 ? "" : "s"}</span>
                   <span>{gpuCount} GPU{gpuCount === 1 ? "" : "s"}</span>
                   <span>{providerCount} provider{providerCount === 1 ? "" : "s"}</span>
-                  <span>{coverage.officialCount} verified · {coverage.referenceCount} reference</span>
+                  <span>{coverage.officialCount} official · {coverage.referenceCount} reference</span>
+                  <span>{coverage.regionalPriceCount} regional prices{coverage.coverageOnlyCount > 0 ? ` · ${coverage.coverageOnlyCount} platform coverage` : ""}</span>
+                  {coverage.offlineCount > 0 && <span>{coverage.offlineCount} offline</span>}
                 </div>
-                <div className="region-card-floor"><span>{indexable ? "USD on-demand benchmark" : "Limited research note"}</span><strong>{formatBenchmarkPrice(floor)}</strong><small>{cheapestGpu?.shortName || "Awaiting sourced pricing"} · {cheapestProvider?.name || "Location checklist available"}</small></div>
+                <div className="region-card-floor"><span>{floor ? "USD on-demand benchmark / GPU-hour" : "No eligible on-demand hourly price"}</span><strong>{formatBenchmarkPrice(floor)}</strong><small>{floor ? `${cheapestGpu?.shortName} · ${cheapestProvider?.name}` : coverage.offlineCount === coverage.offerCount ? "All listed offers are offline" : indexable ? "See published periods and purchase terms" : "Limited sourced coverage"}</small></div>
                 <span className="region-card-arrow">↗</span>
               </Link>
             );
