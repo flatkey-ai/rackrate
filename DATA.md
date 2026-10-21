@@ -8,10 +8,10 @@ traced to a source URL and observation time.
 
 - The scheduled workflow runs daily at 10:30 Asia/Shanghai (02:30 UTC); GitHub queueing can delay the start.
 - Collectors use official public pricing pages or documented public APIs only.
-- The pinned GPU Price Monitor library must complete exactly five public sources successfully: Nebius, Crusoe, Lambda, UCloud and AutoDL. There is no additional collector. Invalid units, failed sources or incomplete data stop publication and retain the last-known-good dataset. Contact-sales entries are preserved with a null amount, never a zero price.
+- The pinned GPU Price Monitor library must complete all nine public sources successfully: Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda and Microsoft Azure. There is no additional collector. Invalid units, failed sources or incomplete data stop publication and retain the last-known-good dataset. Contact-sales entries are preserved with a null amount, never a zero price.
 - A published list price is not treated as live inventory. Availability stays
   `unknown` unless the source explicitly exposes capacity.
-- The current dataset contains only this collection's `dataStatus: "official-page"` observations from those five competitors. Seed observations and discontinued providers remain in existing dated history and are not relabeled or copied into the current board.
+- The current dataset contains only this collection's `dataStatus: "official-page"` observations from those nine competitors. Seed observations and discontinued providers remain in existing dated history and are not relabeled or copied into the current board.
 
 ## Normalization
 
@@ -27,16 +27,16 @@ Region and zone values come from the source. Missing geography stays unpublished
 
 ## Current coverage
 
-The library supplies only Nebius, Crusoe, Lambda, UCloud and AutoDL to RackRate. Lambda retains all published node sizes rather than only the cheapest one. AutoDL's public homepage covers ordinary and member tariffs, not authenticated per-machine inventory. UCloud supplies promotional month packages, including offline records. A provider's footprint does not imply price coverage of every country in that footprint. The current provider index lists only competitors with current records, and the GPU index lists only models present in those records.
+The library supplies Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda and Microsoft Azure to RackRate. RunPod Secure Cloud and Community Cloud rates remain distinct. Azure records retain their region, SKU, billing meter and purchase mode; a verified hardware mapping is required before a per-GPU price can be produced. DigitalOcean and Verda public catalog rates remain unlocated unless the source binds a rate to a location. Lambda retains all published node sizes rather than only the cheapest one. AutoDL's public homepage covers ordinary and member tariffs, not authenticated per-machine inventory. UCloud supplies promotional month packages, including offline records. A provider's footprint does not imply price coverage of every country in that footprint. The current provider index lists only competitors with current records, and the GPU index lists only models present in those records.
 
-New snapshots declare these five slugs in `collector.providers`. The reader retains compatibility with previously verified bundled snapshots, but its current-board projection still excludes discontinued providers and historical reference offers. No historical JSON file is rewritten to imitate a fresh quote.
+New snapshots declare all nine slugs in `collector.providers`. Every required source must succeed before a new collection can replace the published dataset. The reader also accepts the complete prior five-source collector 0.7.0 snapshot during rollout, and verified older bundled snapshots at their original collection times. Historical reference offers and untracked providers remain outside the current board. No historical JSON file is rewritten to imitate a fresh quote.
 
 The raw library response in `data/public-prices.json` retains source URLs, collection timestamps, effective dates, original units and coverage indices. `generatedCatalog` in `data/offers.json` adds source-derived GPU/provider metadata without inventing missing specifications. New adapters belong in the open-source library and need meaningful fixture tests before publication.
 
 ## Ranking, corrections, and reuse
 
 - Offer rows display USD after documented FX conversion and are compared within billing-unit, purchase-mode and price-basis groups. Original-currency filters remain available. Missing numeric prices, seed references, offline promotions, membership requirements and component-only rates retain explicit labels and eligibility rules. A family-level listing does not make different VRAM, interfaces or instance configurations equivalent. Commercial placement in provider directories is separate from offer ranking and cannot change source labels or price-table order.
-- Flatkey is a commercial partner with a separate service profile and quote-request links using sponsored link attributes. It is not a competitor price source or an entry in the five-provider price comparison. No Flatkey prices or inventory are inferred from its public reference index.
+- Flatkey is a commercial partner with a separate service profile and quote-request links using sponsored link attributes. It is not a competitor price source or an entry in the competitor price comparison. No Flatkey prices or inventory are inferred from its public reference index.
 - Corrections are accepted through the public `data-correction` issue form in the `flatkey-ai/rackrate` repository and must include a source URL.
 - Repository code and the normalized dataset are published under the repository's MIT license. Upstream provider names, marks, and source-page content remain the property of their respective owners.
 

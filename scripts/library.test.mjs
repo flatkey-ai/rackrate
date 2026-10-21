@@ -36,8 +36,8 @@ function fixture(additional = []) {
     },
   };
 }
-test("the scheduled collector requires exactly the five selected competitors", () => {
-  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl"]);
+test("the scheduled collector requires exactly all nine selected competitors", () => {
+  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "azure"]);
 });
 
 test("native currency, period, explicit geography and unavailable status survive ingestion", () => {
@@ -208,7 +208,7 @@ test("Python selection prefers explicit path then clone-local venv over global P
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: () => false }), "python3");
 });
 
-test("current dataset contains only this five-provider collection and never reobserves old offers", () => {
+test("current dataset contains only this nine-provider collection and never reobserves old offers", () => {
   const references = ["vast-ai", "aws", "hyperstack", "runpod", "flatkey"].map((providerSlug) => ({
     id: `dated-${providerSlug}`, providerSlug, dataStatus: "seed", observedAt: "2020-01-01T00:00:00Z",
   }));
@@ -216,7 +216,7 @@ test("current dataset contains only this five-provider collection and never reob
   const before = JSON.stringify(current);
   const output = buildRackRateDataset(current, fixture());
   assert.equal(output.schemaVersion, 2);
-  assert.equal(output.offers.length, 5);
+  assert.equal(output.offers.length, REQUIRED_PROVIDERS.length);
   assert.ok(output.offers.every((offer) => REQUIRED_PROVIDERS.includes(offer.providerSlug) && offer.dataStatus === "official-page"));
   assert.ok(!output.offers.some((offer) => offer.id === "obsolete"));
   assert.deepEqual(output.sources.map((source) => source.provider).sort(), [...REQUIRED_PROVIDERS].sort());

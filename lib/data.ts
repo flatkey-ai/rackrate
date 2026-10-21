@@ -3,7 +3,7 @@ import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from 
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
-export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"] as const;
+export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "azure"] as const;
 const competitorProviders = new Set<string>(COMPETITOR_PROVIDER_SLUGS);
 const priorityGpuSlugs = ["nvidia-h100", "nvidia-h200", "nvidia-b200", "nvidia-b300"];
 
@@ -451,7 +451,7 @@ export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies
 
 export function createPricingData(dataset: PricingDataset) {
   // Historical snapshots remain intact. The current board only projects
-  // source-backed offers from the five explicitly tracked competitors.
+  // source-backed offers from the nine explicitly tracked competitors.
   const currentOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
     && offer.dataStatus === "official-page");
   const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
@@ -504,7 +504,7 @@ export function createPricingData(dataset: PricingDataset) {
 
   const getGpu = (slug: string) => gpus.find((gpu) => gpu.slug === slug);
   // Flatkey keeps its separate commercial profile and CTA, with no competitor
-  // price records or directory placement in the five-source comparison.
+  // price records or directory placement in the competitor comparison.
   const getProvider = (slug: string) => slug === "flatkey"
     ? curatedProviders.find((provider) => provider.slug === "flatkey")
     : providers.find((provider) => provider.slug === slug);

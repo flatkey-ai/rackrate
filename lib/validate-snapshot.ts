@@ -1,7 +1,8 @@
 import type { PricingDataset } from "./data";
 
 const FIVE_PROVIDERS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
-const LEGACY_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
+const NINE_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "azure"];
+const LEGACY_PROVIDERS = [...NINE_PROVIDERS, "ebcloud", "suanli", "hyperstack"];
 const ECB_PAGE = "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html";
 const ECB_XML = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 const FIVE_MINUTES = 300_000;
@@ -82,15 +83,22 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   check(collector.name === "gpu-price-monitor" && collector.mode === "public-only"
     && typeof collector.version === "string" && /^\d+\.\d+\.\d+$/.test(collector.version)
     && typeof collector.commit === "string" && /^[a-f0-9]{40}$/.test(collector.commit), "public collector identity");
-  // Existing bundled snapshots remain readable at their original observation
-  // time. New collections declare the exact five-provider scope explicitly.
+  // The verified five-source snapshot remains readable during rollout. A new
+  // snapshot must declare either that exact prior scope or the complete nine;
+  // an incomplete nine-source collection cannot downgrade its declared scope.
   const scoped = collector.providers !== undefined;
+  let REQUIRED = LEGACY_PROVIDERS;
   if (scoped) {
     const declared = list(collector.providers, "collector providers");
-    check(declared.length === FIVE_PROVIDERS.length && new Set(declared).size === FIVE_PROVIDERS.length
-      && FIVE_PROVIDERS.every((provider) => declared.includes(provider)), "five-provider collector scope");
+    const matching = [FIVE_PROVIDERS, NINE_PROVIDERS].find((providers) =>
+      declared.length === providers.length && new Set(declared).size === providers.length
+      && providers.every((provider) => declared.includes(provider)));
+    check(matching, "five- or nine-provider collector scope");
+    if (matching === FIVE_PROVIDERS) {
+      check(collector.version === "0.7.0", "five-provider compatibility collector version");
+    }
+    REQUIRED = matching;
   }
-  const REQUIRED = scoped ? FIVE_PROVIDERS : LEGACY_PROVIDERS;
 
   const catalog = row(data.generatedCatalog, "generatedCatalog");
   const gpuSlugs = new Set<string>();
@@ -110,7 +118,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   }
   if (!scoped) {
     // Compatibility for the immutable legacy fallback only. Current boards
-    // project five competitors and never surface these historical references.
+    // never surface these historical references as current prices.
     gpuSlugs.add("nvidia-a100-80gb");
     for (const provider of ["aws", "vast-ai", "hyperstack"]) providerSlugs.add(provider);
   }
@@ -241,7 +249,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   const coverage = row(data.coverage, "coverage"), totals = row(coverage.totals, "coverage totals");
   check(coverage.schema_version === 1 && coverage.collection_status === "success" && coverage.scope === "returned_quotes", "coverage status");
   const summary = row(coverage.source_summary, "coverage sources");
-  const librarySourceCount = scoped ? FIVE_PROVIDERS.length : 11;
+  const librarySourceCount = scoped ? REQUIRED.length : 11;
   check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount && summary.failed_count === 0
     && summary.unknown_count === 0 && summary.no_matches_count === 0, "coverage source success");
   check(totals.returned_quotes === libraryIndices.size && totals.considered_quotes === libraryIndices.size

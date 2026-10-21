@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.7.0";
-export const LIBRARY_COMMIT = "3439e05d096645ed5d41df7ed78daacbb9b8f80a";
+export const LIBRARY_VERSION = "0.8.0";
+export const LIBRARY_COMMIT = "7347917f9c276734e906ac360ee427c11f9c1ea2";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -19,6 +19,7 @@ export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTH
 }
 export const REQUIRED_PROVIDERS = Object.freeze([
   "nebius", "crusoe", "lambda", "ucloud", "autodl",
+  "runpod", "digitalocean", "verda", "azure",
 ]);
 
 const PROVIDERS = {
@@ -27,6 +28,10 @@ const PROVIDERS = {
   lambda: ["Lambda", "GPU cloud", "https://lambda.ai"],
   ucloud: ["UCloud", "GPU cloud", "https://www.ucloud.cn"],
   autodl: ["AutoDL", "Marketplace", "https://www.autodl.com"],
+  runpod: ["RunPod", "GPU cloud", "https://www.runpod.io"],
+  digitalocean: ["DigitalOcean", "GPU cloud", "https://www.digitalocean.com"],
+  verda: ["Verda", "GPU cloud", "https://verda.com"],
+  azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
 };
 
 // Settings() deliberately bypasses .env and credentials inherited by this process.
@@ -317,7 +322,7 @@ export function validateOffers(offers, { requireUsd = false, rates } = {}) {
 
 export function buildRackRateDataset(_current, libraryResult) {
   const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
-  // Only this collection's five source results define the current dataset.
+  // Only this collection's nine source results define the current dataset.
   // Earlier references remain in dated history; they are never re-observed.
   const offers = publicOffers.sort((a, b) => a.id.localeCompare(b.id));
   validateOffers(offers);

@@ -44,7 +44,7 @@ export default async function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>Compare the five tracked providers: Nebius, Crusoe, Lambda, UCloud and AutoDL. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey’s separate commercial profile and quote links are not competitor prices. Comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
+          <p>Compare nine tracked providers: Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, DigitalOcean, Verda and Microsoft Azure. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey’s separate commercial profile and quote links are not competitor prices. Comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {

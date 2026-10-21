@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPricingData, prioritizeGpuCatalog, type Offer, type PricingDataset } from "./data.ts";
+import { COMPETITOR_PROVIDER_SLUGS, createPricingData, prioritizeGpuCatalog, type Offer, type PricingDataset } from "./data.ts";
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "public-example-hourly", gpuSlug: "nvidia-h100", providerSlug: "nebius", gpuCount: null, gpuVariant: "PCIe", vramGb: 80,
@@ -50,7 +50,7 @@ test("catalog projection follows each snapshot without retaining a prior catalog
 });
 
 test("the current board excludes other collectors and dated references while keeping the commercial CTA profile", () => {
-  const excluded = ["aws", "vast-ai", "hyperstack", "runpod", "azure", "digitalocean", "flatkey"];
+  const excluded = ["aws", "vast-ai", "hyperstack", "ebcloud", "suanli", "flatkey"];
   const input = dataset({ offers: [quote(), ...excluded.map((providerSlug) => quote({ id: providerSlug, providerSlug })),
     quote({ id: "dated-nebius", providerSlug: "nebius", dataStatus: "seed" })],
     sources: [{ provider: "nebius", status: "ok" }, ...excluded.map((provider) => ({ provider, status: "reference" }))],
@@ -65,6 +65,23 @@ test("the current board excludes other collectors and dated references while kee
   assert.equal(current.getProvider("flatkey")?.name, "Flatkey");
   assert.deepEqual(current.getOffersForProvider("flatkey"), []);
   assert.equal(JSON.stringify(input), before);
+});
+
+test("all nine current competitors appear only when the snapshot contains their source-backed quotes", () => {
+  const input = dataset({
+    offers: COMPETITOR_PROVIDER_SLUGS.map((providerSlug) => quote({ id: providerSlug, providerSlug })),
+    sources: COMPETITOR_PROVIDER_SLUGS.map((provider) => ({ provider, status: "ok", offerCount: 1 })),
+    generatedCatalog: {
+      gpus: dataset().generatedCatalog!.gpus,
+      providers: COMPETITOR_PROVIDER_SLUGS.map((slug) => ({ slug, name: slug, website: `https://example.com/${slug}` })),
+    },
+  });
+  const current = createPricingData(input);
+  assert.equal(current.offers.length, 9);
+  assert.deepEqual(current.providers.map((provider) => provider.slug).sort(), [...COMPETITOR_PROVIDER_SLUGS].sort());
+  assert.equal(current.sources.length, 9);
+  assert.equal(current.getOffersForProvider("runpod").length, 1);
+  assert.equal(current.getOffersForProvider("azure").length, 1);
 });
 test("status and filters use the same original-currency monthly snapshot", () => {
   const monthly = quote({ id: "monthly", sourceCurrency: "CNY", billingUnit: "GPU-month", pricePerGpuUnit: 100, priceUsdPerGpuUnit: 15, pricePerGpuHour: null, availability: "unavailable", rentalType: "Monthly", regions: ["United States", "Finland"], region: "United States, Finland" });

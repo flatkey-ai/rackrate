@@ -21,6 +21,12 @@ test("failed, future or incomplete snapshots never suppress a fresh collection",
   assert.equal(collectionIsDue(snapshot("2026-10-20T03:00:00Z"),now),true);
 });
 
+test("a prior successful five-source run cannot suppress the expanded nine-source collection", () => {
+  const previous = snapshot("2026-10-20T02:40:00Z");
+  previous.provider_results = previous.provider_results.slice(0, 5);
+  assert.equal(collectionIsDue(previous, new Date("2026-10-20T02:45:00Z")), true);
+});
+
 test("force refresh only bypasses daily deduplication for explicit manual runs", () => {
   const options = { now: new Date("2026-10-20T02:45:00Z"), ref: "refs/heads/main" };
   const complete = snapshot("2026-10-20T02:40:00Z");
