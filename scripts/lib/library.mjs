@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.6.0";
-export const LIBRARY_COMMIT = "c67cc8edfb7b7418f2dd0f1bb4b9ce6ed2238326";
+export const LIBRARY_VERSION = "0.6.1";
+export const LIBRARY_COMMIT = "bdbe0920a534facadf9b30bf0562f1278223c6ad";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -87,7 +87,12 @@ function strings(value, label) {
 
 export function validatePublicResult(result) {
   if (result?.schema_version !== 1 || result.status !== "success") {
-    throw new Error("Public collection was incomplete; existing data was preserved");
+    // Expose known source names and error codes, never arbitrary upstream text.
+    const failures = Array.isArray(result?.provider_results) ? result.provider_results
+      .filter((source) => REQUIRED_PROVIDERS.includes(source?.provider)
+        && (source.status !== "success" || source.error || !(source.returned_count > 0)))
+      .map((source) => `${source.provider}${/^[a-z_]{1,64}$/.test(source.error?.code ?? "") ? ` (${source.error.code})` : ""}`) : [];
+    throw new Error(`Public collection was incomplete${failures.length ? `: ${failures.join(", ")}` : ""}; existing data was preserved`);
   }
   timestamp(result.collected_at, "collection timestamp");
   if (!Array.isArray(result.prices) || !result.prices.length || !Array.isArray(result.provider_results)) {
