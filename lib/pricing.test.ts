@@ -16,6 +16,10 @@ test("eligibility badges and filtering retain regional and membership restrictio
   assert.equal(hasEligibilityConditions(member), true);
   assert.equal(hasEligibilityConditions(quote()), false);
   assert.equal(isComparableUsdHourly(member), false);
+  const compShare = quote({ providerSlug: "ucloud", pricingTier: "ordinary", membershipRequired: false,
+    conditions: ["API 折后价资格未核实，未当作会员价或比较价格。"] });
+  assert.equal(hasEligibilityConditions(compShare), false);
+  assert.equal(isComparableUsdHourly(compShare), true);
 });
 
 test("collapsed price configurations disclose the cloud tier alongside published hardware", () => {
@@ -67,6 +71,12 @@ test("dated USD conversion permits original CNY hourly quotes without mixing mon
   assert.match(formatOriginalPrice(converted), /CNY.*10\.00/);
   assert.equal(isComparableUsdHourly({ ...converted, fx: null }), false);
   assert.equal(isComparableUsdHourly({ ...converted, billingUnit: "GPU-month", pricePerGpuHour: null }), false);
+});
+test("headline prices are easy to read while rounded rates and tiny nonzero prices remain honest", () => {
+  assert.match(formatOfferPrice(quote({ priceUsdPerGpuUnit: 4.426 })), /^≈ USD\s*4\.43$/);
+  assert.match(formatOfferPrice(quote({ priceUsdPerGpuUnit: 2.5 })), /^USD\s*2\.50$/);
+  assert.match(formatOfferPrice(quote({ sourceCurrency: "CNY", priceUsdPerGpuUnit: 0.296495 })), /^≈ USD\s*0\.30$/);
+  assert.match(formatOfferPrice(quote({ priceUsdPerGpuUnit: 0.00000000123456 })), /^≈ USD\s*0\.00000000123$/);
 });
 test("sorting keeps monthly periods separate while ordering converted hourly amounts", () => {
   const input = [quote({ id: "usd", priceUsdPerGpuUnit: .01 }), quote({ id: "cny-month", sourceCurrency: "CNY", billingUnit: "GPU-month", priceUsdPerGpuUnit: .001 }), quote({ id: "cny-hour", sourceCurrency: "CNY", priceUsdPerGpuUnit: 14 })];

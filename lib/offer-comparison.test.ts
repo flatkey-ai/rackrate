@@ -2,13 +2,58 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Offer } from "./data";
 
-const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate, summarizeComparisonGroup, matchesPriceRegionFilter, priceRegionCoverage } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
+const { groupOffersForComparison, comparisonBucketKey, offerAudience, isMemberPrice, hasAdditionalEligibility, isLowestPriceCandidate, summarizeComparisonGroup, matchesPriceRegionFilter, priceRegionCoverage, directoryHeadlineOffer } = await import(new URL("./offer-comparison.ts", import.meta.url).href) as typeof import("./offer-comparison");
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "regular", gpuSlug: "nvidia-rtx-4090", providerSlug: "example", gpuCount: 1, gpuVariant: null, vramGb: 24,
   pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "Not published", regions: [], zones: [], countryCode: "",
   availability: "unknown", egress: "Not published", sourceUrl: "https://example.com/prices", observedAt: "2026-10-20T08:00:00Z",
   sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
+});
+
+const regional = (id: string, rentalType: Offer["rentalType"], amount: number, overrides: Partial<Offer> = {}) => quote({
+  id, rentalType, sourceAmount: String(amount), pricePerGpuUnit: amount, priceUsdPerGpuUnit: amount, pricePerGpuHour: amount,
+  region: "eu-north1", regions: ["eu-north1"], computeCountries: ["FI"], countryCode: "FI", priceScope: "regional_quote", ...overrides,
+});
+
+test("GPU directory cards prefer regular on-demand without comparing its price against cheaper Spot", () => {
+  const input = [regional("spot", "Spot", 0.5), regional("on-demand-high", "On-demand", 4), regional("on-demand-low", "On-demand", 3)];
+  const before = JSON.stringify(input);
+  assert.equal(directoryHeadlineOffer(input)?.id, "on-demand-low");
+  assert.equal(directoryHeadlineOffer(input)?.rentalType, "On-demand");
+  assert.equal(JSON.stringify(input), before);
+});
+
+test("Spot-only GPU directory cards return an actual regular Spot quote with its purchase mode intact", () => {
+  const selected = directoryHeadlineOffer([
+    regional("spot-high", "Spot", 3.8), regional("spot-low", "Spot", 1.6),
+    regional("member-on-demand", "On-demand", 0.1, { membershipRequired: true }),
+  ]);
+  assert.equal(selected?.id, "spot-low");
+  assert.equal(selected?.rentalType, "Spot");
+  assert.equal(selected?.sourceAmount, "1.6");
+});
+
+test("directory Spot fallback cannot promote unavailable, monthly, starting, component, member or conditional rates", () => {
+  const excluded = [
+    regional("component", "Spot", 0.1, { priceBasis: "gpu_component" }),
+    regional("offline", "Spot", 0.1, { availability: "unavailable" }),
+    regional("monthly", "Monthly", 0.1, { billingUnit: "GPU-month" }),
+    regional("starting", "Spot", 0.1, { quoteStatus: "starting_at" }),
+    regional("member", "Spot", 0.1, { membershipRequired: true }),
+    regional("conditional", "Spot", 0.1, { conditions: ["New-customer price"] }),
+  ];
+  assert.equal(directoryHeadlineOffer(excluded), undefined);
+  assert.equal(directoryHeadlineOffer([...excluded, regional("valid-spot", "Spot", 2)])?.id, "valid-spot");
+});
+
+test("directory cards can use complete catalog prices without attaching their coverage to the price", () => {
+  const catalog = regional("catalog", "On-demand", 2, { priceScope: "platform_coverage", regionPriceVerified: false,
+    regions: [], computeCountries: [], countryCode: "", coverageRegions: ["eu-north1"] });
+  const before = JSON.stringify(catalog);
+  assert.equal(directoryHeadlineOffer([catalog, regional("spot", "Spot", 0.1)])?.id, "catalog");
+  assert.deepEqual(matchesPriceRegionFilter(catalog, "eu-north1"), false);
+  assert.equal(JSON.stringify(catalog), before);
 });
 
 test("canonical GPU grouping puts platforms together and sorts compatible prices without mutating input", () => {
@@ -29,12 +74,12 @@ test("regional filters recalculate minima without attaching a region to the chea
     quote({ id: "eu", providerSlug: "nebius", regions: ["eu-north1", "eu-west1"], priceUsdPerGpuUnit: 3 }),
     quote({ id: "reference", dataStatus: "seed", regions: ["Canada"], priceUsdPerGpuUnit: 0.1 }),
   ];
-  assert.deepEqual(priceRegionCoverage(input), { offerCount: 2, providerCount: 2, regionCount: 3, unspecifiedCount: 1 });
+  assert.deepEqual(priceRegionCoverage(input), { offerCount: 2, providerCount: 2, regionCount: 3, unspecifiedCount: 1, coverageOnlyCount: 0 });
   assert.deepEqual(summarizeComparisonGroup(groupOffersForComparison(input)[0])[0].lowestRegularOffers.map((offer) => offer.id), ["catalog"]);
   const published = input.filter((offer) => matchesPriceRegionFilter(offer, "__published"));
   assert.deepEqual(summarizeComparisonGroup(groupOffersForComparison(published)[0])[0].lowestRegularOffers.map((offer) => offer.id), ["us"]);
   assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "eu-north1")).map((offer) => offer.id), ["eu"]);
-  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "__unpublished")).map((offer) => offer.id), ["catalog"]);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "__unpublished")).map((offer) => offer.id), ["catalog", "reference"]);
   assert.deepEqual(input[0].regions, []);
 });
 
@@ -50,6 +95,19 @@ test("regional minima exclude platform availability lists while retaining those 
   assert.equal(regional.offers.length, 2);
   assert.deepEqual(summarizeComparisonGroup(regional)[0].lowestRegularOffers.map((offer) => offer.id), ["regional"]);
   assert.deepEqual(regional.buckets[0].lowestRegularIds, ["regional"]);
+});
+
+test("price-region filtering excludes coverage codes from old and new snapshots while keeping public references visible", () => {
+  const legacyCoverage = quote({ id: "old-coverage", providerSlug: "nebius", regions: ["eu-north1"], priceScope: "platform_coverage" });
+  const coverage = quote({ id: "coverage", providerSlug: "nebius", coverageRegions: ["eu-north1"], coverageCountries: ["FI"], priceScope: "platform_coverage" });
+  const catalog = quote({ id: "catalog", providerSlug: "lambda", priceScope: "unlocated_catalog" });
+  const regional = quote({ id: "regional", providerSlug: "azure", regions: ["eu-north1"], priceScope: "regional_quote" });
+  const input = [legacyCoverage, coverage, catalog, regional];
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "all")), input);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "eu-north1")).map((offer) => offer.id), ["regional"]);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "__published")).map((offer) => offer.id), ["regional"]);
+  assert.deepEqual(input.filter((offer) => matchesPriceRegionFilter(offer, "__coverage")).map((offer) => offer.id), ["old-coverage", "coverage"]);
+  assert.deepEqual(priceRegionCoverage(input), { offerCount: 1, providerCount: 1, regionCount: 1, unspecifiedCount: 1, coverageOnlyCount: 2 });
 });
 
 test("regular and member minima stay separate, support ties, and exclude extra eligibility", () => {
@@ -72,6 +130,10 @@ test("membership is explicit, ordinary source caveats do not become member or co
   assert.equal(offerAudience(quote({ conditions: ["Availability, account eligibility and checkout totals were not verified."] })), "regular");
   assert.equal(hasAdditionalEligibility(quote({ conditions: ["ILS prices apply to companies from Israel"] })), true);
   assert.equal(hasAdditionalEligibility(quote({ conditions: ["No minimum commitment"] })), false);
+  const compShare = quote({ providerSlug: "ucloud", pricingTier: "ordinary", membershipRequired: false,
+    conditions: ["API 折后价资格未核实，未当作会员价或比较价格。"] });
+  assert.equal(isMemberPrice(compShare), false);
+  assert.equal(offerAudience(compShare), "regular");
 });
 
 test("account-specific quote amounts remain inspectable but cannot claim a public regular minimum", () => {

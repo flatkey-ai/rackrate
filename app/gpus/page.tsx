@@ -6,6 +6,7 @@ import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { SnapshotFooter } from "@/components/snapshot-footer";
 import { gpuMemoryLabel } from "@/lib/data";
 import { formatBenchmarkPrice } from "@/lib/pricing";
+import { directoryHeadlineOffer } from "@/lib/offer-comparison";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -63,7 +64,7 @@ export default async function GpusIndexPage() {
           <div>
             <span className="eyebrow">GPU rental price index</span>
             <h1>Compare GPU prices by model.</h1>
-            <p>Compare accelerators by memory, architecture and sourced hourly rates. Once you have a model in mind, ask Flatkey to match the GPU count, region and duration to your workload. Card benchmarks use on-demand GPU-hour quotes displayed in USD, with dated ECB conversions where needed. Offline, reference, starting, member and GPU-component rates are excluded. Original prices, periods and FX rates stay visible on each model page and in the exchange-rate disclosure below.</p>
+            <p>Compare hourly GPU catalog and regional prices. Cards prefer a regular on-demand rate, otherwise a regular Spot rate explicitly labeled Spot. Catalog prices do not establish a worldwide rate. Dated ECB conversions are used where needed. Offline, starting, member and GPU-component rates stay out of card benchmarks; monthly packages remain in the source audit.</p>
           </div>
           <div className="directory-summary">
             <div><span>Models tracked</span><strong>{gpus.length}</strong></div>
@@ -81,7 +82,7 @@ export default async function GpusIndexPage() {
         <div className="directory-card-grid gpu-directory-grid">
           {gpus.map((gpu) => {
             const gpuOffers = getOffersForGpu(gpu.slug);
-            const cheapest = getCheapestOffer(gpu.slug);
+            const cheapest = directoryHeadlineOffer(gpuOffers);
             const providerCount = new Set(gpuOffers.map((offer) => offer.providerSlug)).size;
             return (
               <article className="directory-card" key={gpu.slug}>
@@ -94,7 +95,7 @@ export default async function GpusIndexPage() {
                   <div><dt>Indexed listings</dt><dd>{gpuOffers.length} across {providerCount} provider{providerCount === 1 ? "" : "s"}</dd></div>
                 </dl>
                 <div className="directory-card-foot">
-                  <span>USD on-demand <strong>{formatBenchmarkPrice(cheapest)}</strong>/hr</span>
+                  <span>{cheapest ? <>USD {cheapest.rentalType} <strong>{formatBenchmarkPrice(cheapest)}</strong>/GPU-hour</> : "See published hourly rates"}</span>
                   <Link href={`/gpus/${gpu.slug}`}>Compare {gpu.shortName} prices →</Link>
                 </div>
               </article>

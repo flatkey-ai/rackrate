@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildRackRateDataset, collectPublicLibrary, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
-  PYTHON_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
-  validateOffers,
+  buildRackRateDataset, collectPublicLibrary, collectPublicLibraryBundle, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
+  PYTHON_COLLECTION_CODE, PYTHON_BUNDLE_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
+  publicCsvColumns, validatePublicLibraryBundle, validateOffers,
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
+import { buildCompactPriceTable } from "./lib/compact-csv.mjs";
 
 const observedAt = "2026-10-20T08:00:00Z";
 const rates = parseEcbRates(`<gesmes:Envelope xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref"><gesmes:name>European Central Bank</gesmes:name><Cube><Cube time='2026-10-19'><Cube currency='USD' rate='1.2'/><Cube currency='CNY' rate='8'/><Cube currency='ILS' rate='4'/></Cube></Cube></gesmes:Envelope>`, { observedAt });
@@ -25,6 +26,7 @@ function fixture(additional = []) {
   const prices = [...REQUIRED_PROVIDERS.map((provider) => quote(provider)), ...additional];
   return {
     schema_version: 1, collected_at: observedAt, status: "success", prices,
+    execution: { runtime: "python", parsing: "deterministic_rules", uses_llm: false, source_policy: "api_preferred" },
     provider_results: REQUIRED_PROVIDERS.map((provider) => ({
       provider, source_url: `https://example.com/${provider}`, source_type: "public_page",
       status: "success", observed_at: observedAt, returned_count: prices.filter((item) => item.provider === provider).length,
@@ -36,8 +38,25 @@ function fixture(additional = []) {
     },
   };
 }
-test("the scheduled collector requires exactly the five selected competitors", () => {
-  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl"]);
+// Hand-authored CSV fixture, not an application-side quote serializer. Its
+// embedded comma/newline guards against mistaking physical lines for rows.
+const fixtureCsv = '\uFEFFprovider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,collected_at,collection_status,notes\r\n'
+  + 'nebius,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,"quoted, detail\r\ncontinued"\r\n'
+  + 'crusoe,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'lambda,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'ucloud,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'autodl,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'runpod,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'digitalocean,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'verda,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n'
+  + 'azure,H100,1.25,USD,gpu_hour,unlocated_catalog,unknown,2026-10-20T08:00:00Z,2026-10-20T08:00:00Z,success,\r\n';
+const bilingualFixtureCsv = fixtureCsv.replace(
+  "provider,gpu_model,amount,currency,unit,price_scope,availability,observed_at,collected_at,collection_status,notes\r\n",
+  "provider（平台）,gpu_model（GPU型号）,amount（原币价格）,currency（币种）,unit（计费单位）,price_scope（地区价格范围）,availability（可用状态）,observed_at（报价采集时间）,collected_at（批次采集时间）,collection_status（采集状态）,notes（备注）\r\n",
+);
+function bundle(result = fixture(), csv = bilingualFixtureCsv) { return { result, csv }; }
+test("the scheduled collector requires exactly all nine selected competitors", () => {
+  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "digitalocean", "verda", "azure"]);
 });
 
 test("native currency, period, explicit geography and unavailable status survive ingestion", () => {
@@ -196,9 +215,65 @@ test("Python bridge uses explicit public Settings rather than dotenv or process 
   assert.equal(captured[0], "/custom/python");
   assert.deepEqual(captured[1], ["-c", PYTHON_COLLECTION_CODE]);
   assert.ok(PYTHON_COLLECTION_CODE.includes(`__version__ != "${LIBRARY_VERSION}"`));
-  assert.ok(PYTHON_COLLECTION_CODE.includes(`collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)`));
+  assert.ok(PYTHON_COLLECTION_CODE.includes(`collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(source_policy="api_preferred"), include_coverage=True)`));
   assert.ok(!PYTHON_COLLECTION_CODE.includes("from_env"));
   await assert.rejects(collectPublicLibrary({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
+});
+
+test("publication requires the deterministic Python API-preferred execution policy", () => {
+  for (const execution of [undefined,
+    { runtime: "python", parsing: "deterministic_rules", uses_llm: true, source_policy: "api_preferred" },
+    { runtime: "codex", parsing: "deterministic_rules", uses_llm: false, source_policy: "api_preferred" },
+    { runtime: "python", parsing: "model", uses_llm: false, source_policy: "api_preferred" },
+    { runtime: "python", parsing: "deterministic_rules", uses_llm: false, source_policy: "configured" },
+  ]) {
+    assert.throws(() => validatePublicResult({ ...fixture(), execution }), /execution policy/);
+  }
+});
+
+test("Python bundle serializes the same single collection with the library CSV exporter", async () => {
+  const expected = bundle();
+  let calls = 0;
+  const result = await collectPublicLibraryBundle({ python: "/custom/python", exec: async (python, args) => {
+    calls++;
+    assert.equal(python, "/custom/python");
+    assert.deepEqual(args, ["-c", PYTHON_BUNDLE_COLLECTION_CODE]);
+    return { stdout: JSON.stringify(expected) };
+  } });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.result, expected.result);
+  assert.equal(result.csv, bilingualFixtureCsv);
+  assert.equal((PYTHON_BUNDLE_COLLECTION_CODE.match(/result = collect_prices\(/g) ?? []).length, 1);
+  assert.ok(PYTHON_BUNDLE_COLLECTION_CODE.includes('prices_to_csv(result, profile="full")'));
+  assert.ok(!PYTHON_BUNDLE_COLLECTION_CODE.includes("from_env"));
+  await assert.rejects(collectPublicLibraryBundle({ exec: async () => ({ stdout: "not-json" }) }), /valid JSON/);
+});
+
+test("bundle accepts bilingual or legacy English headers and preserves every CSV value byte", () => {
+  for (const csv of [bilingualFixtureCsv, fixtureCsv]) {
+    assert.equal(validatePublicLibraryBundle(bundle(fixture(), csv)).csv, csv);
+    assert.equal(publicCsvColumns(csv)[0], "provider");
+  }
+  assert.deepEqual(publicCsvColumns(bilingualFixtureCsv), publicCsvColumns(fixtureCsv));
+  assert.equal(bilingualFixtureCsv.slice(bilingualFixtureCsv.indexOf("\r\n")), fixtureCsv.slice(fixtureCsv.indexOf("\r\n")));
+});
+
+test("bundle rejects missing CSV, empty tables and unexpected headers without line-counting quoted fields", () => {
+  assert.equal(validatePublicLibraryBundle(bundle()).csv, bilingualFixtureCsv);
+  for (const csv of [undefined, "", fixtureCsv.slice(1), fixtureCsv.replaceAll("\r\n", "\n"),
+    fixtureCsv.slice(0, fixtureCsv.indexOf("\r\n") + 2), fixtureCsv.replace("price_scope", "location"),
+    fixtureCsv.replace("provider,gpu_model", "provider,provider")]) {
+    assert.throws(() => validatePublicLibraryBundle({ result: fixture(), csv }), /Public CSV/);
+  }
+  for (const csv of [bilingualFixtureCsv.replace("gpu_model（GPU型号）", "provider（GPU型号）"),
+    bilingualFixtureCsv.replace("provider（平台）", "provider（平台"),
+    bilingualFixtureCsv.replace("provider（平台）", "provider（）"),
+    bilingualFixtureCsv.replace("price_scope（地区价格范围）", "location（地区价格范围）")]) {
+    assert.throws(() => validatePublicLibraryBundle(bundle(fixture(), csv)), /Public CSV/);
+  }
+  const failed = bundle();
+  failed.result.status = "partial";
+  assert.throws(() => validatePublicLibraryBundle(failed), /incomplete/);
 });
 
 test("Python selection prefers explicit path then clone-local venv over global Python", () => {
@@ -208,7 +283,7 @@ test("Python selection prefers explicit path then clone-local venv over global P
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: () => false }), "python3");
 });
 
-test("current dataset contains only this five-provider collection and never reobserves old offers", () => {
+test("current dataset contains only this nine-provider collection and never reobserves old offers", () => {
   const references = ["vast-ai", "aws", "hyperstack", "runpod", "flatkey"].map((providerSlug) => ({
     id: `dated-${providerSlug}`, providerSlug, dataStatus: "seed", observedAt: "2020-01-01T00:00:00Z",
   }));
@@ -216,7 +291,7 @@ test("current dataset contains only this five-provider collection and never reob
   const before = JSON.stringify(current);
   const output = buildRackRateDataset(current, fixture());
   assert.equal(output.schemaVersion, 2);
-  assert.equal(output.offers.length, 5);
+  assert.equal(output.offers.length, REQUIRED_PROVIDERS.length);
   assert.ok(output.offers.every((offer) => REQUIRED_PROVIDERS.includes(offer.providerSlug) && offer.dataStatus === "official-page"));
   assert.ok(!output.offers.some((offer) => offer.id === "obsolete"));
   assert.deepEqual(output.sources.map((source) => source.provider).sort(), [...REQUIRED_PROVIDERS].sort());
@@ -234,6 +309,26 @@ test("platform coverage cannot supply a country-price label even when old locati
   assert.deepEqual(row.computeCountries, []);
   assert.equal(row.countryCode, "");
   assert.deepEqual(row.regions, ["eu-north1"]);
+});
+
+test("regional Spot prices preserve country, effective time and public/API provenance separately", () => {
+  const result = fixture();
+  Object.assign(result.prices[0], { regions: ["me-west1"], compute_countries: ["IL"],
+    price_scope: "regional_quote", region_price_verified: true, billing_mode: "spot",
+    source_url: "https://api.nebius.cloud/billing/v1alpha1/spot-price", public_url: "https://nebius.com/spot-prices",
+    effective_from: "2026-10-20T07:45:00Z", source_snapshot_at: "2026-10-20T07:59:00Z",
+    provider_sku_id: "sku-example",
+    coverage_regions: [], coverage_countries: [] });
+  const row = normalizeLibraryResult(result).offers[0];
+  assert.equal(row.countryCode, "IL");
+  assert.equal(row.regionPriceVerified, true);
+  assert.equal(row.rentalType, "Spot");
+  assert.equal(row.sourceUrl, "https://nebius.com/spot-prices");
+  assert.equal(row.apiSourceUrl, result.prices[0].source_url);
+  assert.equal(row.effectiveFrom, result.prices[0].effective_from);
+  assert.equal(row.sourceSnapshotAt, result.prices[0].source_snapshot_at);
+  assert.equal(row.providerSkuId, "sku-example");
+  assert.deepEqual(row.coverageRegions, []);
 });
 
 test("USD conversion preserves native prices and periods and requires matching provenance", () => {
@@ -266,7 +361,7 @@ test("refresh aborts before any write when a required public source fails", asyn
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result,
+    collect: async () => bundle(result),
     collectRates: async () => rates,
     write: async () => { writes++; },
   }), /Required public source failed/);
@@ -277,7 +372,7 @@ test("refresh aborts before any write when FX rates cannot be verified", async (
   let writes = 0;
   await assert.rejects(refreshPrices({
     read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => fixture(),
+    collect: async () => bundle(),
     collectRates: async () => { throw new Error("ECB rate source unavailable"); },
     write: async () => { writes++; },
   }), /ECB rate source unavailable/);
@@ -288,17 +383,58 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   const files = new Map();
   const publications = [];
   const result = fixture();
+  Object.assign(result.prices[0], { regions: ["us-central1"], compute_countries: ["US"],
+    price_scope: "regional_quote", region_price_verified: true, billing_mode: "spot" });
   await refreshPrices({
     directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
-    collect: async () => result,
+    collect: async () => bundle(result),
     collectRates: async () => rates,
-    write: async (path, body) => files.set(path, JSON.parse(body)),
+    write: async (path, body) => files.set(path, path.endsWith(".csv.tmp") ? body : JSON.parse(body)),
     move: async (from, to) => publications.push([from, to]), remove: async () => {},
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
+  assert.equal(files.get("/example/data/public-prices.csv.tmp"), bilingualFixtureCsv);
+  assert.ok(files.get("/example/data/prices.csv.tmp").startsWith("\uFEFFGPU型号/规格,平台,报价适用范围,"));
+  assert.ok(files.get("/example/data/prices.csv.tmp").endsWith("\r\n"));
+  assert.ok(files.get("/example/data/prices.csv.tmp").includes("us-central1"));
+  assert.ok(!files.get("/example/data/prices.csv.tmp").includes("未公布"));
+  assert.equal(buildCompactPriceTable(files.get("/example/data/offers.json.tmp")).rows.length, REQUIRED_PROVIDERS.length);
+  assert.ok(publications.some(([, to]) => to === "/example/data/public-prices.csv"));
+  assert.ok(publications.some(([, to]) => to === "/example/data/prices.csv"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].sourceCurrency, "USD");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].fx.rateDate, "2026-10-19");
   assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].fx, undefined);
+});
+
+test("refresh rejects invalid CSV before writing any part of a new dataset", async () => {
+  let writes = 0;
+  await assert.rejects(refreshPrices({
+    read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
+    collect: async () => ({ result: fixture(), csv: "" }),
+    collectRates: async () => rates,
+    write: async () => { writes++; },
+  }), /Public CSV/);
+  assert.equal(writes, 0);
+});
+
+test("CSV staging or publication failure leaves the offers publication marker unchanged", async () => {
+  for (const failAt of ["write", "move"]) {
+    const published = [];
+    const cleaned = [];
+    await assert.rejects(refreshPrices({
+      directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
+      collect: async () => bundle(), collectRates: async () => rates,
+      write: async (path) => { if (failAt === "write" && path.endsWith(".csv.tmp")) throw new Error("CSV write failed"); },
+      move: async (from, to) => {
+        if (failAt === "move" && to.endsWith(".csv")) throw new Error("CSV publication failed");
+        published.push(to);
+      },
+      remove: async (path) => { cleaned.push(path); },
+    }), /CSV (write|publication) failed/);
+    assert.ok(!published.includes("/example/data/offers.json"));
+    assert.ok(cleaned.includes("/example/data/public-prices.csv.tmp"));
+    assert.ok(cleaned.includes("/example/data/offers.json.tmp"));
+  }
 });

@@ -10,8 +10,15 @@ export function formatAmount(amount: number | null | undefined, currency: string
 }
 export function formatOfferPrice(offer: Offer) {
   const usd = offer.priceUsdPerGpuUnit;
+  const small = typeof usd === "number" && usd > 0 && usd < 0.01;
+  const rounded = typeof usd === "number" && Number.isFinite(usd)
+    ? Number(small ? usd.toPrecision(3) : usd.toFixed(2)) : usd;
+  const displayed = typeof usd === "number" && Number.isFinite(usd)
+    ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", currencyDisplay: "code",
+      ...(small ? { minimumSignificantDigits: 2, maximumSignificantDigits: 3 }
+        : { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }).format(usd) : "—";
   return offer.quoteStatus === "contact_sales" || offer.pricePerGpuUnit === null
-    ? "Contact sales" : usd === null ? "USD conversion unavailable" : `${offer.quoteStatus === "starting_at" ? "From " : ""}${offer.sourceCurrency !== "USD" ? "≈ " : ""}${formatAmount(usd, "USD")}`;
+    ? "Contact sales" : usd === null ? "USD conversion unavailable" : `${offer.quoteStatus === "starting_at" ? "From " : ""}${offer.sourceCurrency !== "USD" || rounded !== usd ? "≈ " : ""}${displayed}`;
 }
 export function formatBenchmarkPrice(offer: Offer | undefined) {
   return offer ? formatOfferPrice(offer) : "—";
@@ -55,7 +62,10 @@ export function summaryConfigurationLabel(offer: Offer): string {
 // USD-normalized comparisons never mix billing periods, offline/reference listings,
 // starting prices, component-only charges, member rates or purchasing models.
 export function hasEligibilityConditions(offer: Offer) {
-  return isAccountSpecificPrice(offer) || offer.membershipRequired === true || offer.conditions.some((condition) => /member|membership|会员|reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
+  const member = offer.membershipRequired === true || offer.pricingTier === "member"
+    || (offer.membershipRequired !== false && !["ordinary", "regular"].includes(offer.pricingTier ?? "")
+      && offer.conditions.some((condition) => /member|membership|会员/i.test(condition)));
+  return isAccountSpecificPrice(offer) || member || offer.conditions.some((condition) => /reserved|commitment|prepaid|new.customer|新客|仅新客户|prices apply to companies from Israel/i.test(condition));
 }
 export function isComparableUsdHourly(offer: Offer): offer is Offer & { pricePerGpuHour: number } {
   return offer.billingUnit === "GPU-hour"

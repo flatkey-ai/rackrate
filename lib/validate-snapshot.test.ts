@@ -7,10 +7,12 @@ const original = JSON.parse(readFileSync(new URL("../data/offers.json", import.m
 const observed = Date.parse(original.generatedAt);
 const fresh = () => structuredClone(original);
 const tracked = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
+const expanded = [...tracked, "runpod", "digitalocean", "verda", "azure"];
 
 function fiveProviderSnapshot() {
   const data = fresh();
   data.collector.providers = [...tracked];
+  data.collector.version = "0.7.0";
   data.offers = data.offers.filter((offer: { providerSlug: string; dataStatus: string }) => tracked.includes(offer.providerSlug) && offer.dataStatus === "official-page");
   data.sources = data.sources.filter((source: { provider: string }) => tracked.includes(source.provider));
   const indices = new Map<number, number>();
@@ -27,6 +29,27 @@ function fiveProviderSnapshot() {
   const gpuSlugs = new Set(data.offers.map((offer: { gpuSlug: string }) => offer.gpuSlug));
   data.generatedCatalog.gpus = data.generatedCatalog.gpus.filter((gpu: { slug: string }) => gpuSlugs.has(gpu.slug));
   data.generatedCatalog.providers = data.generatedCatalog.providers.filter((provider: { slug: string }) => tracked.includes(provider.slug));
+  return data;
+}
+
+function nineProviderSnapshot() {
+  const data = fiveProviderSnapshot();
+  data.collector.version = "0.8.0";
+  data.collector.providers = [...expanded];
+  const template = data.offers[0];
+  const model = [...data.coverage.models, ...data.coverage.extra_models]
+    .find((entry) => entry.gpu_model === template.gpuModel);
+  for (const provider of expanded.slice(tracked.length)) {
+    const offer = { ...structuredClone(template), id: `test-${provider}`, providerSlug: provider,
+      sourceQuoteIndex: data.offers.length, sourceUrl: `https://example.com/${provider}` };
+    data.offers.push(offer);
+    model.quote_indices.push(offer.sourceQuoteIndex);
+    model.quote_count++;
+    data.sources.push({ provider, status: "ok", offerCount: 1, fetchedAt: data.generatedAt, url: offer.sourceUrl });
+    data.generatedCatalog.providers.push({ slug: provider, name: provider, website: offer.sourceUrl });
+  }
+  data.coverage.totals.returned_quotes = data.coverage.totals.considered_quotes = data.offers.length;
+  data.coverage.source_summary.requested_count = data.coverage.source_summary.success_count = expanded.length;
   return data;
 }
 
@@ -77,6 +100,27 @@ test("an explicit five-provider snapshot validates and excludes every discontinu
   }
 });
 
+test("a complete nine-provider snapshot validates while partial or downgraded scopes fail", () => {
+  const data = nineProviderSnapshot();
+  const before = JSON.stringify(data);
+  assert.equal(validatePricingDataset(data, observed), data);
+  assert.equal(JSON.stringify(data), before);
+  for (const mutate of [
+    (value: typeof original) => { value.collector.providers.pop(); },
+    (value: typeof original) => { value.collector.providers[5] = "hyperstack"; },
+    (value: typeof original) => { value.sources = value.sources.filter((source: { provider: string }) => source.provider !== "azure"); },
+    (value: typeof original) => { value.sources.find((source: { provider: string }) => source.provider === "runpod").status = "failed"; },
+    (value: typeof original) => { value.coverage.source_summary.success_count = tracked.length; },
+    (value: typeof original) => { value.offers = value.offers.filter((offer: { providerSlug: string }) => offer.providerSlug !== "verda"); },
+  ]) {
+    const invalid = nineProviderSnapshot(); mutate(invalid);
+    assert.throws(() => validatePricingDataset(invalid, observed));
+  }
+  const downgraded = fiveProviderSnapshot();
+  downgraded.collector.version = "0.8.0";
+  assert.throws(() => validatePricingDataset(downgraded, observed), /compatibility collector version/);
+});
+
 test("location provenance cannot turn platform coverage into a verified country price", () => {
   const data = fiveProviderSnapshot();
   const offer = data.offers.find((entry: { providerSlug: string }) => entry.providerSlug === "nebius");
@@ -125,8 +169,12 @@ test("unknown references, duplicate IDs and invalid catalog URLs are rejected", 
 
 test("monthly original and USD amounts cannot be misrepresented as hourly", () => {
   const input = fresh();
-  const monthly = input.offers.find((entry: { billingUnit: string }) => entry.billingUnit === "GPU-month");
+  // Build a monthly audit record explicitly; current snapshots may be hourly-only.
+  const monthly = input.offers.find((entry: { quoteStatus: string }) => entry.quoteStatus === "quoted");
   assert.ok(monthly);
+  Object.assign(monthly, { billingUnit: "GPU-month", billingMode: "monthly", rentalType: "Monthly", pricePerGpuHour: null });
+  if (monthly.instancePrice != null) monthly.instanceBillingUnit = "instance-month";
+  assert.equal(validatePricingDataset(input, observed), input);
   monthly.pricePerGpuHour = monthly.priceUsdPerGpuUnit;
   assert.throws(() => validatePricingDataset(input, observed), /hourly period mismatch/);
   monthly.pricePerGpuHour = null;
@@ -153,11 +201,16 @@ test("source decimals, dollar amounts, nulls and exchange-rate provenance must a
 });
 
 test("arrays, source links, offline status and coverage references are validated", () => {
+  // Offline audit rows are valid only when their presentation status agrees.
+  const offline = fresh();
+  Object.assign(offline.offers[0], { sourceAvailability: "offline", availability: "unavailable" });
+  assert.equal(validatePricingDataset(offline, observed), offline);
+  offline.offers[0].availability = "unknown";
+  assert.throws(() => validatePricingDataset(offline, observed), /offline availability/);
   const mutations: Array<(data: typeof original) => void> = [
     (data) => { data.offers[0].conditions = "member only"; },
     (data) => { data.offers.find((entry: { dataStatus: string }) => entry.dataStatus === "official-page").regions = [42]; },
     (data) => { data.offers[0].sourceUrl = "file:///tmp/prices"; },
-    (data) => { data.offers.find((entry: { sourceAvailability?: string }) => entry.sourceAvailability === "offline").availability = "unknown"; },
     (data) => { data.coverage.collection_status = "partial"; },
     (data) => { data.coverage.source_summary.success_count = 10; },
     (data) => { data.coverage.models[0].quote_indices[0] = 999999; },

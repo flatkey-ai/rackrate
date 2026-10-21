@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.7.0";
-export const LIBRARY_COMMIT = "3439e05d096645ed5d41df7ed78daacbb9b8f80a";
+export const LIBRARY_VERSION = "0.13.0";
+export const LIBRARY_COMMIT = "f100946748acc4fdba7f06cf1083b44fa612e63d";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -19,6 +19,7 @@ export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTH
 }
 export const REQUIRED_PROVIDERS = Object.freeze([
   "nebius", "crusoe", "lambda", "ucloud", "autodl",
+  "runpod", "digitalocean", "verda", "azure",
 ]);
 
 const PROVIDERS = {
@@ -27,31 +28,81 @@ const PROVIDERS = {
   lambda: ["Lambda", "GPU cloud", "https://lambda.ai"],
   ucloud: ["UCloud", "GPU cloud", "https://www.ucloud.cn"],
   autodl: ["AutoDL", "Marketplace", "https://www.autodl.com"],
+  runpod: ["RunPod", "GPU cloud", "https://www.runpod.io"],
+  digitalocean: ["DigitalOcean", "GPU cloud", "https://www.digitalocean.com"],
+  verda: ["Verda", "GPU cloud", "https://verda.com"],
+  azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
 };
 
-// Settings() deliberately bypasses .env and credentials inherited by this process.
+// Explicit Settings deliberately bypasses .env and inherited credentials.
 // The library owns collection only; RackRate owns persistence and publication.
-export const PYTHON_COLLECTION_CODE = `
+const PYTHON_COLLECTION_SETUP = `
 import json
 from gpu_price_monitor import Settings, __version__, collect_prices
 if __version__ != "${LIBRARY_VERSION}":
     raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
-result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)
+result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(source_policy="api_preferred"), include_coverage=True)
+`;
+export const PYTHON_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
+export const PYTHON_BUNDLE_COLLECTION_CODE = `${PYTHON_COLLECTION_SETUP}
+from gpu_price_monitor import prices_to_csv
+print(json.dumps({"result": result, "csv": prices_to_csv(result, profile="full")}, ensure_ascii=False, allow_nan=False))
+`;
 
-export async function collectPublicLibrary({
+async function readPublicPython(program, {
   python = collectionPython(),
   exec = execFile,
 } = {}) {
-  const { stdout } = await exec(python, ["-c", PYTHON_COLLECTION_CODE], {
+  const { stdout } = await exec(python, ["-c", program], {
     encoding: "utf8", timeout: 12 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
   });
   let result;
   try { result = JSON.parse(stdout); }
   catch { throw new Error("gpu-price-monitor did not return valid JSON; existing data was preserved"); }
-  validatePublicResult(result);
   return result;
+}
+
+export async function collectPublicLibrary(options = {}) {
+  return validatePublicResult(await readPublicPython(PYTHON_COLLECTION_CODE, options));
+}
+
+export function publicCsvColumns(csv) {
+  const headerEnd = typeof csv === "string" ? csv.indexOf("\r\n") : -1;
+  if (headerEnd < 0 || !csv.startsWith("\uFEFF")) {
+    throw new Error("Public CSV has an unexpected header; existing data was preserved");
+  }
+  return csv.slice(1, headerEnd).split(",").map((label) => {
+    // The library preserves English column IDs and adds optional Chinese
+    // labels in full-width parentheses. Never translate or rewrite CSV rows.
+    const match = /^([a-z][a-z0-9_]*)(?:（[^（）,\r\n"]+）)?$/.exec(label);
+    if (!match) throw new Error("Public CSV has an unexpected header; existing data was preserved");
+    return match[1];
+  });
+}
+
+export function validatePublicLibraryBundle(bundle) {
+  validatePublicResult(bundle?.result);
+  const csv = bundle.csv;
+  if (typeof csv !== "string" || !csv.startsWith("\uFEFF") || !csv.endsWith("\r\n")) {
+    throw new Error("Public CSV is missing its UTF-8 BOM or CRLF framing; existing data was preserved");
+  }
+  const headerEnd = csv.indexOf("\r\n");
+  const columns = publicCsvColumns(csv);
+  const required = ["provider", "gpu_model", "amount", "currency", "unit", "price_scope", "availability", "observed_at", "collected_at", "collection_status"];
+  if (headerEnd < 0 || headerEnd + 2 === csv.length
+      || new Set(columns).size !== columns.length
+      || required.some((column) => !columns.includes(column))) {
+    throw new Error("Public CSV has no quote rows or an unexpected header; existing data was preserved");
+  }
+  // CSV may contain quoted commas or newlines. Do not count physical lines or
+  // serialize again in JavaScript: Python owns the exact quote projection.
+  return bundle;
+}
+
+export async function collectPublicLibraryBundle(options = {}) {
+  return validatePublicLibraryBundle(await readPublicPython(PYTHON_BUNDLE_COLLECTION_CODE, options));
 }
 
 function timestamp(value, label) {
@@ -88,6 +139,10 @@ export function validatePublicResult(result) {
     throw new Error(`Public collection was incomplete${failures.length ? `: ${failures.join(", ")}` : ""}; existing data was preserved`);
   }
   timestamp(result.collected_at, "collection timestamp");
+  if (result.execution?.runtime !== "python" || result.execution?.parsing !== "deterministic_rules"
+      || result.execution?.uses_llm !== false || result.execution?.source_policy !== "api_preferred") {
+    throw new Error("Unexpected collector execution policy; existing data was preserved");
+  }
   if (!Array.isArray(result.prices) || !result.prices.length || !Array.isArray(result.provider_results)) {
     throw new Error("Public collection has no prices or source results");
   }
@@ -235,6 +290,7 @@ export function normalizeLibraryResult(result) {
     return {
       id: stableId(quote), gpuSlug, providerSlug: quote.provider, gpuModel: family,
       rawGpuModel: quote.gpu_model, rawName: quote.raw_name ?? null, rawSku: quote.raw_sku ?? null,
+      providerSkuId: quote.provider_sku_id ?? quote.azure_meter?.sku_id ?? null,
       gpuVariant: quote.gpu_variant ?? null, vramGb: quote.vram_gb ?? null,
       gpuCount: quote.gpu_count,
       ...(Number.isFinite(resources.vcpus ?? resources.vcpu_count) ? { vcpu: resources.vcpus ?? resources.vcpu_count } : {}),
@@ -254,14 +310,20 @@ export function normalizeLibraryResult(result) {
       promotion: quote.promotion ?? null, selectedConfiguration: quote.selected_configuration ?? null,
       sourceConditions: quote.conditions ?? null, minimumCommitment: quote.minimum_commitment ?? null,
       pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
+      productLine: quote.product_line ?? null,
       region: regions.length ? regions.join(", ") : "Not published", regions, zones,
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
       countryCode, computeCountries, location: quote.location ?? null,
       priceScope: quote.price_scope ?? null, locationSource: quote.location_source ?? null,
+      regionPriceVerified: quote.region_price_verified ?? null,
+      coverageRegions: strings(quote.coverage_regions ?? [], "coverage regions"),
+      coverageCountries: strings(quote.coverage_countries ?? [], "coverage countries"),
       availability, sourceAvailability: rawAvailability,
-      egress: "Not published", sourceUrl: quote.source_url,
+      egress: "Not published", sourceUrl: quote.public_url ?? quote.source_url,
+      apiSourceUrl: quote.api_endpoint ?? quote.api_url ?? (quote.public_url ? quote.source_url : null),
       sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
       effectiveFrom: quote.effective_from ?? null, effectiveUntil: quote.effective_until ?? null,
+      sourceSnapshotAt: quote.source_snapshot_at ?? null,
       accountScope: quote.account_scope ?? "unspecified", taxScope: quote.tax_scope ?? "unspecified",
       productType: quote.product_type, conditions: conditionsFor(quote),
       dataStatus: "official-page", sourceQuoteIndex: index,
@@ -317,17 +379,20 @@ export function validateOffers(offers, { requireUsd = false, rates } = {}) {
 
 export function buildRackRateDataset(_current, libraryResult) {
   const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
-  // Only this collection's five source results define the current dataset.
+  // Only this collection's nine source results define the current dataset.
   // Earlier references remain in dated history; they are never re-observed.
   const offers = publicOffers.sort((a, b) => a.id.localeCompare(b.id));
   validateOffers(offers);
   return {
     schemaVersion: 2,
     generatedAt: libraryResult.collected_at,
-    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS] },
+    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS], sourcePolicy: "api_preferred", runtime: "python", usesLlm: false },
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
+        additionalUrls: source.additional_source_urls ?? [],
+        collectionMethod: source.collection_method ?? null, selectionReason: source.selection_reason ?? null,
+        fallbackReason: source.fallback_reason ?? null, apiEndpoint: source.api_endpoint ?? null,
         status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
     ],
     offers,

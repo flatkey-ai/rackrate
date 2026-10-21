@@ -9,6 +9,7 @@ import { getPricingSnapshot } from "@/lib/pricing-snapshot";
 import { SnapshotFooter } from "@/components/snapshot-footer";
 import { cheapestComparableOffer, formatBenchmarkPrice } from "@/lib/pricing";
 import { absoluteUrl, flatkeyWebsiteUrl } from "@/lib/site";
+import { priceRegionCoverage } from "@/lib/offer-comparison";
 
 type PageProps = { params: Promise<{ slug: string }> };
 
@@ -36,7 +37,7 @@ export default async function ProviderPage({ params }: PageProps) {
   if (provider.slug === "flatkey") return <FlatkeyProfile />;
   const listings = getOffersForProvider(provider.slug);
   const gpuCount = new Set(listings.map((offer) => offer.gpuSlug)).size;
-  const regions = new Set(listings.map((offer) => offer.region)).size;
+  const location = priceRegionCoverage(listings);
   const floor = cheapestComparableOffer(listings);
 
   return (
@@ -53,14 +54,14 @@ export default async function ProviderPage({ params }: PageProps) {
           <div className="provider-scorecard">
             <div><span>USD on-demand benchmark</span><strong>{formatBenchmarkPrice(floor)}</strong><small>per GPU / hour</small></div>
             <div><span>GPUs listed</span><strong>{gpuCount}</strong><small>models</small></div>
-            <div><span>Regions</span><strong>{regions}</strong><small>in indexed offers</small></div>
+            <div><span>Price regions</span><strong>{location.regionCount}</strong><small>{location.coverageOnlyCount ? `${location.coverageOnlyCount} platform coverage listings separately` : location.regionCount ? "tied to indexed prices" : "Price region unverified"}</small></div>
             <div><span>Billing</span><strong className="text-value">{provider.billing}</strong><small>provider policy</small></div>
           </div>
         </div>
       </section>
 
       <section className="detail-content shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Sourced catalogue</span><h2>Indexed GPU configurations</h2></div><p>Prices display in USD with original amounts and dated exchange rates attached. Monthly periods remain separate. Show every record to include offline prices.</p></div>
+        <div className="detail-section-heading"><div><span className="eyebrow">Regional hourly quotes</span><h2>Comparable GPU configurations</h2></div><p>Each price is numeric, per GPU-hour and tied to a published country and region. Original amounts and dated exchange rates stay attached. Monthly packages and unverified price locations are excluded.</p></div>
         <PriceExplorer {...explorerData} providerSlug={provider.slug} />
         <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Pricing guide</span><strong>Evaluate the full cost per GPU-hour →</strong></Link><Link href="/providers"><span>Provider directory</span><strong>Compare other GPU clouds →</strong></Link></div>
       </section>

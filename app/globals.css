@@ -858,3 +858,48 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .fx-disclosure ul { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 0; list-style: none; }
 .fx-disclosure a { text-decoration: underline; text-underline-offset: 3px; }
 .price-cell small { max-width: 280px; white-space: normal; line-height: 1.6; }
+
+
+/* Homepage: keep the comparison central and secondary reading compact. */
+.home-page .hero-grid { min-height: 0; padding-block: 56px; gap: 48px; }
+.home-page .hero-copy h1 { font-size: clamp(52px, 5.6vw, 80px); }
+.home-page .catalogue-section { padding-block: 64px; }
+.home-page .section-heading { margin-bottom: 28px; }
+.home-page .section-heading h2 { font-size: clamp(34px, 3.5vw, 48px); }
+.home-gpu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.home-gpu-grid .gpu-card { min-height: 210px; }
+.home-gpu-grid .gpu-card h3 { font-size: 30px; }
+.home-gpu-grid .gpu-card p { margin-bottom: 20px; }
+.home-page .providers-section { padding-block: 64px; }
+.home-provider-directory { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid rgba(255,255,255,.25); }
+.home-provider-link { min-height: 86px; padding: 18px 20px 18px 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(255,255,255,.16); }
+.home-provider-link .provider-name small { margin-top: 6px; text-transform: none; font-size: 11px; }
+.home-provider-link:hover .provider-name { color: var(--acid); }
+.home-page .flatkey-overview { padding-block: 64px 40px; }
+.home-page .flatkey-overview .section-heading { margin-bottom: 20px; }
+.home-page .flatkey-overview .section-heading-aside .button { margin-top: 16px; border: 1px solid var(--ink); }
+.home-source-notes { padding-block: 24px 40px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+.home-source-notes p { margin: 0 0 12px; }
+.home-source-notes nav { display: flex; flex-wrap: wrap; gap: 22px; color: var(--ink); }
+.home-source-notes a { text-decoration: underline; text-underline-offset: 3px; }
+.home-source-notes details { margin-top: 18px; }
+.home-source-notes summary { cursor: pointer; width: fit-content; color: var(--ink); }
+.home-source-notes .fx-disclosure { width: 100%; margin: 18px 0 0; padding: 18px 0 0; }
+@media (max-width: 1000px) {
+  .home-gpu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .home-page .hero-grid { padding-block: 40px; gap: 32px; }
+  .home-page .hero-copy h1 { font-size: clamp(46px, 12vw, 68px); }
+  .home-page .catalogue-section, .home-page .providers-section { padding-block: 44px; }
+  .home-provider-directory { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-provider-link { min-height: 80px; padding-right: 14px; }
+  .home-provider-link .provider-name { font-size: 17px; }
+  .home-page .flatkey-overview { padding-block: 44px 32px; }
+}
+@media (max-width: 420px) {
+  .home-gpu-grid .gpu-card { min-height: 190px; padding: 14px; }
+  .home-gpu-grid .gpu-card h3 { font-size: 25px; }
+  .home-gpu-grid .gpu-card-top { flex-wrap: wrap; }
+  .home-gpu-grid .gpu-card-bottom { flex-wrap: wrap; }
+}
