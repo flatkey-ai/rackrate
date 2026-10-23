@@ -59,6 +59,8 @@ export type Offer = {
   fx?: { rateToUsd: number; rateDate: string; sourceUrl: string; sourceName: string; rateToUsdDecimal?: string; converted?: boolean; formula?: string; rounding?: string; observedAt?: string } | null;
   pricePerGpuHour: number | null;
   sourceAmount?: string | null;
+  exactApiHourlyAmount?: string | null;
+  priceSource?: Record<string, unknown> | null;
   instancePrice?: number | null;
   instancePriceUsd?: number | null;
   instanceSourceAmount?: string | null;
@@ -86,6 +88,8 @@ export type Offer = {
   capacityLocations?: Record<string, unknown>[];
   sourceType?: string;
   quoteConditions?: Record<string, unknown> | string[] | null;
+  sourceConditions?: Record<string, unknown> | string[] | null;
+  productType?: string;
   apiSourceUrl?: string | null;
   priceBasisSourceUrl?: string | null;
   collectionSource?: string | null;

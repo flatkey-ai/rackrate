@@ -388,6 +388,7 @@ export function normalizeLibraryResult(result) {
       ...(Number.isFinite(resources.ram_gb) ? { ramGb: resources.ram_gb } : {}),
       resources,
       sourceAmount: quote.amount, pricePerGpuUnit: amount,
+      exactApiHourlyAmount: quote.exact_api_hourly_amount ?? null, priceSource: quote.price_source ?? null,
       pricePerGpuHour: quote.currency === "USD" && billingUnit === "GPU-hour" ? amount : null,
       sourceCurrency: quote.currency, billingUnit,
       instancePrice, instanceSourceAmount: instance?.amount ?? null,
