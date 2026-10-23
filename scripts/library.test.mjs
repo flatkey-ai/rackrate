@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildRackRateDataset, collectPublicLibrary, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
   PYTHON_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
-  validateOffers,
+  validateOffers, collectAuthorizedLibrary, collectionMode, collectionEnvironment, AUTHORIZED_SECRET_NAMES,
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
@@ -289,16 +289,123 @@ test("refresh retains complete raw provenance and publishes dataset after histor
   const publications = [];
   const result = fixture();
   await refreshPrices({
-    directory: "/example", read: async (path) => JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] }),
+    directory: "/example", read: async (path) => {
+      if (path.includes("/price-history/")) throw Object.assign(new Error("Missing new shard"), { code: "ENOENT" });
+      return JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : { snapshots: [] });
+    },
     collect: async () => result,
     collectRates: async () => rates,
     write: async (path, body) => files.set(path, JSON.parse(body)),
-    move: async (from, to) => publications.push([from, to]), remove: async () => {},
+    move: async (from, to) => publications.push([from, to]), remove: async () => {}, makeDirectory: async () => {},
   });
   assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");
-  assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].sourceCurrency, "USD");
-  assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].fx.rateDate, "2026-10-19");
-  assert.equal(files.get("/example/data/price-history.json.tmp").snapshots[0].offers[0].fx, undefined);
+  const index = files.get("/example/data/price-history.json.tmp");
+  assert.equal(index.schemaVersion, 3);
+  const history = files.get(`/example/data/${index.shards[0].path}.tmp`);
+  assert.equal(history.snapshots[0].offers[0].sourceCurrency, "USD");
+  assert.equal(history.snapshots[0].fx.rateDate, "2026-10-19");
+  assert.equal(history.snapshots[0].offers[0].fx, undefined);
+  assert.ok(publications.findIndex(([, to]) => to.endsWith(index.shards[0].path))
+    < publications.findIndex(([, to]) => to.endsWith("price-history.json")));
+});
+
+test("failed publication preserves expired shards and removes staged files", async () => {
+  const deletes = [], writes = [], moves = [];
+  const expiredPath = "price-history/2025-01-01.json";
+  const currentHistory = { schemaVersion: 3, retentionDays: 180, shards: [{ date: "2025-01-01", path: expiredPath,
+    snapshotCount: 1, offerCount: 1, bytes: 100, firstObservedAt: "2025-01-01T01:00:00Z", lastObservedAt: "2025-01-01T01:00:00Z" }] };
+  await assert.rejects(refreshPrices({
+    directory: "/example", read: async (path) => {
+      if (path.includes("/price-history/")) throw Object.assign(new Error("Missing new shard"), { code: "ENOENT" });
+      return JSON.stringify(path.endsWith("offers.json") ? { offers: [] } : currentHistory);
+    },
+    collect: async () => fixture(), collectRates: async () => rates,
+    makeDirectory: async () => {}, write: async (path) => writes.push(path),
+    move: async (from, to) => { moves.push(to); if (to.endsWith("price-history.json")) throw new Error("rename failed"); },
+    remove: async (path) => deletes.push(path),
+  }), /rename failed/);
+  assert.ok(!moves.includes("/example/data/offers.json"));
+  assert.ok(!deletes.some((path) => path.endsWith(expiredPath)));
+  assert.deepEqual(deletes.sort(), writes.sort());
+});
+
+
+function authorizedFixture() {
+  const result = fixture([quote("nebius", { collection_source: "nebius_account", account_scope: "account_quote" })]);
+  result.collection_mode = "authorized";
+  result.validation_policy = "visible-catalog-v1";
+  for (const source of result.provider_results) {
+    source.source_observations = (source.provider === "nebius" ? ["nebius_public", "nebius_account"] : [source.provider]).map((selection) => ({
+      selection, status: "success", source_url: source.source_url, source_type: source.source_type,
+      observed_at: observedAt, returned_count: 1, limitations: [],
+    }));
+  }
+  return result;
+}
+
+test("authorization is explicit, environment allowlisted and child errors never expose secrets", async () => {
+  const env = { ...Object.fromEntries(AUTHORIZED_SECRET_NAMES.map((name) => [name, "synthetic-secret"])),
+    PATH: "/usr/bin", RANDOM_SECRET: "not-for-python", LAMBDA_SOURCE: "public", UCLOUD_PROJECT_ID: "not-for-python" };
+  assert.equal(collectionMode(""), "public");
+  assert.throws(() => collectionMode("other"), /must be public or authorized/);
+  assert.deepEqual(collectionEnvironment("public", env), { PATH: "/usr/bin" });
+  const child = collectionEnvironment("authorized", env);
+  assert.equal(child.RACKRATE_LAMBDA_STORAGE_STATE_JSON, "synthetic-secret");
+  assert.equal(child.RANDOM_SECRET, undefined);
+  assert.equal(child.LAMBDA_SOURCE, undefined);
+  assert.throws(() => collectionEnvironment("authorized", { ...env, RACKRATE_NEBIUS_ACCESS_TOKEN: "" }), /credentials/);
+  let called = false;
+  await assert.rejects(collectAuthorizedLibrary({ env: {}, exec: async () => { called = true; } }), /credentials/);
+  assert.equal(called, false);
+  await assert.rejects(collectAuthorizedLibrary({ env, exec: async () => { throw new Error("synthetic-secret response body"); } }),
+    (error) => !error.message.includes("synthetic-secret") && error.message.includes("preserved"));
+  const result = await collectAuthorizedLibrary({ env, exec: async (_python, args, options) => {
+    assert.ok(args[0].endsWith("collect-authorized.py"));
+    assert.equal(args[1], LIBRARY_VERSION);
+    assert.ok(!args.join(" ").includes("synthetic-secret"));
+    assert.equal(options.env.RANDOM_SECRET, undefined);
+    return { stdout: JSON.stringify(authorizedFixture()) };
+  } });
+  assert.equal(result.collection_mode, "authorized");
+});
+
+test("authorized validation keeps known visibility limits partial and rejects missing or failed sub-sources", () => {
+  const result = authorizedFixture();
+  result.status = result.coverage.collection_status = "partial";
+  const nebius = result.provider_results[0];
+  nebius.status = nebius.source_observations[1].status = "partial";
+  nebius.source_observations[1].limitations = [{ scope: "documented_public_region", status: "no_accessible_project" }];
+  assert.equal(validatePublicResult(result), result);
+  const output = buildRackRateDataset({}, result);
+  assert.equal(output.collector.mode, "authorized");
+  assert.equal(output.coverage.collection_status, "partial");
+  assert.equal(output.sources[0].collectionStatus, "partial");
+  for (const mutate of [
+    (value) => { value.provider_results[0].source_observations.pop(); },
+    (value) => { value.provider_results[0].source_observations[1].status = "failed"; },
+    (value) => { value.provider_results[0].source_observations[1].limitations[0].status = "authentication_error"; },
+    (value) => { value.provider_results[0].source_observations[1].returned_count = 0; },
+  ]) {
+    const changed = structuredClone(result); mutate(changed);
+    assert.throws(() => validatePublicResult(changed));
+  }
+});
+
+test("public and account observations, configurations and reserved terms remain separate without invented countries", () => {
+  const result = fixture([
+    quote("lambda", { visible_source: "console", source_conditions: { duration: "1-week" } }),
+    quote("lambda", { visible_source: "console", source_conditions: { duration: "4-weeks" } }),
+  ]);
+  Object.assign(result.prices[2], { visible_source: "public", applicable_regions: ["us-test"], applicable_countries: ["US"],
+    price_scope: "unlocated_catalog", price_applicability: { scope: "currently_selectable_standard_regions" } });
+  const output = normalizeLibraryResult(result);
+  assert.equal(output.offers.length, 7);
+  assert.equal(new Set(output.offers.map((offer) => offer.id)).size, 7);
+  assert.deepEqual(output.offers[2].regions, []);
+  assert.deepEqual(output.offers[2].computeCountries, []);
+  assert.deepEqual(output.offers[2].applicableRegions, ["us-test"]);
+  assert.equal(output.offers[5].sourceConditions.duration, "1-week");
+  assert.equal(output.offers[6].sourceConditions.duration, "4-weeks");
 });

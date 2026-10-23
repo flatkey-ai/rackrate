@@ -3,7 +3,7 @@ import { Fragment, useRef, useState } from "react";
 import type { Gpu, Offer, Provider } from "@/lib/data";
 import type { OfferComparisonGroup, OfferComparisonBucket } from "@/lib/offer-comparison";
 import { offerAudience, hasAdditionalEligibility, summarizeComparisonGroup, priceRegionCoverage } from "@/lib/offer-comparison";
-import { isRegionSpecificPrice, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
+import { priceLocationQualifier, publishedRegionCodes, publishedRegionLabel } from "@/lib/region-matching";
 import { availabilityLabel, billingUnitLabel, cloudTierLabel, formatAmount, formatOfferPrice, isAccountSpecificPrice, priceBasisLabel, summaryConfigurationLabel } from "@/lib/pricing";
 import { OfferDetails } from "./offer-details";
 import styles from "./price-explorer.module.css";
@@ -54,7 +54,7 @@ function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audien
   const configurations = [...new Set(offers.map(summaryConfigurationLabel))];
   const locations = [...new Set(offers.map((entry) => {
     const label = publishedRegionCodes(entry).slice().sort().map((code) => publishedRegionLabel(entry, code)).join(" · ");
-    return label ? `${isRegionSpecificPrice(entry) ? "" : "Platform coverage: "}${label}` : "Quote region not provided";
+    return label ? `${priceLocationQualifier(entry) ? `${priceLocationQualifier(entry)}: ` : ""}${label}` : "Quote region not provided";
   }))];
   const originals = new Set(offers.map((entry) => `${entry.sourceCurrency}|${entry.pricePerGpuUnit}|${entry.fx?.rateDate ?? ""}`));
   return <div className={`${styles.summaryPrice} ${audience === "member" ? styles.summaryMember : ""}`}>
@@ -96,7 +96,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
           const low = bucket.lowestRegularIds.includes(offer.id);
           return <Fragment key={offer.id}><tr className={`${low ? styles.lowestRow : ""} ${open ? styles.selectedRow : ""}`}>
             <td><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{provider.name}</Link><div className={styles.modelMeta}>{configuration(offer)}</div></td>
-            <td><span className={styles.location}>{publishedRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ") || "Quote region not provided"}</span>{publishedRegionCodes(offer).length > 0 && !isRegionSpecificPrice(offer) && <small className={styles.zone}>Platform coverage · regional price not verified</small>}{offer.zones.length > 0 && <small className={styles.zone}>{offer.zones.join(" · ")}</small>}</td>
+            <td><span className={styles.location}>{publishedRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ") || "Quote region not provided"}</span>{priceLocationQualifier(offer) && <small className={styles.zone}>{priceLocationQualifier(offer)}</small>}{offer.zones.length > 0 && <small className={styles.zone}>{offer.zones.join(" · ")}</small>}</td>
             <td><OfferTerms offer={offer} /></td><td><OfferPrice offer={offer} bucket={bucket} /></td>
             <td><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpu.shortName} on ${provider.name} details`} aria-expanded={open} aria-controls={open ? `${id}-desktop-${offer.id}` : undefined} onClick={() => toggle(offer.id)}>Details<Chevron open={open} /></button></td>
           </tr>{open && <tr className={styles.expandedRow} id={`${id}-desktop-${offer.id}`}><td colSpan={5}><div className={styles.details}><OfferDetails offer={offer} /></div></td></tr>}</Fragment>;
@@ -109,7 +109,7 @@ export function GpuComparisonGroup({ group, gpu, providers, id }: { group: Offer
         return <article key={offer.id} className={`${styles.offerCard} ${low ? styles.lowestCard : ""}`}>
           <div className={styles.cardTop}><div><Link className={styles.platformName} href={`/providers/${provider.slug}`}>{provider.name}</Link></div><OfferPrice offer={offer} bucket={bucket} /></div>
           <div className={styles.cardConfiguration}>{configuration(offer)}</div><OfferTerms offer={offer} />
-          <div className={styles.cardBottom}><span className={styles.location}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8c0 4-6 9-6 9S4 12 4 8a6 6 0 1 1 12 0Z" /><circle cx="10" cy="8" r="2" /></svg><span>{publishedRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ") || "Quote region not provided"}{publishedRegionCodes(offer).length > 0 && !isRegionSpecificPrice(offer) && <small>Platform coverage · regional price not verified</small>}{offer.zones.length > 0 && <small>{offer.zones.join(" · ")}</small>}</span></span><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpu.shortName} on ${provider.name} details`} aria-expanded={open} aria-controls={open ? `${id}-mobile-${offer.id}` : undefined} onClick={() => toggle(offer.id)}>Details<Chevron open={open} /></button></div>
+          <div className={styles.cardBottom}><span className={styles.location}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 8c0 4-6 9-6 9S4 12 4 8a6 6 0 1 1 12 0Z" /><circle cx="10" cy="8" r="2" /></svg><span>{publishedRegionCodes(offer).map((code) => publishedRegionLabel(offer, code)).join(" · ") || "Quote region not provided"}{priceLocationQualifier(offer) && <small>{priceLocationQualifier(offer)}</small>}{offer.zones.length > 0 && <small>{offer.zones.join(" · ")}</small>}</span></span><button className={styles.detailsButton} type="button" aria-label={`${open ? "Hide" : "View"} ${gpu.shortName} on ${provider.name} details`} aria-expanded={open} aria-controls={open ? `${id}-mobile-${offer.id}` : undefined} onClick={() => toggle(offer.id)}>Details<Chevron open={open} /></button></div>
           {open && <div className={styles.details} id={`${id}-mobile-${offer.id}`}><OfferDetails offer={offer} /></div>}
         </article>;
       })}</div>

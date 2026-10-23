@@ -78,6 +78,13 @@ export type Offer = {
   locationSource?: Record<string, unknown> | null;
   computeCountries?: string[];
   priceScope?: string | null;
+  applicableRegions?: string[];
+  applicableCountries?: string[];
+  priceApplicability?: Record<string, unknown> | null;
+  capacityLocations?: Record<string, unknown>[];
+  sourceType?: string;
+  collectionSource?: string | null;
+  visibleSource?: string | null;
   countryCode: string;
   availability: Availability;
   egress: string;

@@ -1,0 +1,89 @@
+{
+  "providerSlug": "lambda",
+  "sourceType": "official_internal_api",
+  "sourceUrl": "https://cloud.lambda.ai/api/internal/dashboard/v1/instance-types",
+  "accountScope": "authenticated_console_catalog",
+  "priceScope": "unlocated_catalog",
+  "dataStatus": "official-page",
+  "region": "Not published",
+  "regions": [],
+  "computeCountries": [],
+  "countryCode": "",
+  "applicableRegions": [
+    "asia-south-1",
+    "us-east-1",
+    "us-west-2"
+  ],
+  "applicableCountries": [
+    "IN",
+    "US"
+  ],
+  "priceApplicability": {
+    "basis": "official_console_shared_sku_catalog",
+    "scope": "currently_selectable_standard_regions",
+    "label_zh": "所列可选地区统一目录价",
+    "verification_status": "verified_current_frontend",
+    "locations": [
+      {
+        "region": "asia-south-1",
+        "description": "India",
+        "country_code": "IN",
+        "country_name_zh": "印度",
+        "region_name_zh": "印度（官方未细分城市）"
+      },
+      {
+        "region": "us-east-1",
+        "description": "Virginia, USA",
+        "country_code": "US",
+        "country_name_zh": "美国",
+        "region_name_zh": "弗吉尼亚州"
+      },
+      {
+        "region": "us-west-2",
+        "description": "Arizona, USA",
+        "country_code": "US",
+        "country_name_zh": "美国",
+        "region_name_zh": "亚利桑那州"
+      }
+    ],
+    "independent_region_quotes": false,
+    "final_checkout_verified": false,
+    "location_status": "currently_selectable",
+    "excluded_dedicated_locations": [],
+    "evidence": {
+      "source_url": "https://cloud.lambda.ai/static/cloud-app/assets/main-BdOFEme8.js",
+      "source_sha256": "becc45eec9df69c8089947297b2958c047a618fedf8dbb6787806c46c346fa6c",
+      "verified_on": "2026-10-23",
+      "price_display_basis": "The standard instance frontend rW displays the SKU price loaded by lW; uW's region selector only changes selected-region state without requesting a new regional price.",
+      "dedicated_exclusion_basis": "The standard instance frontend hides prices when dedicated_region is selected.",
+      "location_basis": "Only capacity locations returned for this exact catalog SKU or cluster configuration are included.",
+      "country_mapping_basis": "Exact official location description; no region-prefix inference.",
+      "does_not_establish": [
+        "nationwide_uniform_price",
+        "worldwide_uniform_price",
+        "final_checkout_price"
+      ],
+      "runtime_version_check": {
+        "status": "verified",
+        "sha256": "becc45eec9df69c8089947297b2958c047a618fedf8dbb6787806c46c346fa6c",
+        "source_url": "https://cloud.lambda.ai/static/cloud-app/assets/main-BdOFEme8.js",
+        "reviewed_source_url": "https://cloud.lambda.ai/static/cloud-app/assets/main-BdOFEme8.js",
+        "reviewed_sha256": "becc45eec9df69c8089947297b2958c047a618fedf8dbb6787806c46c346fa6c"
+      }
+    }
+  },
+  "capacityLocations": [
+    {
+      "name": "asia-south-1",
+      "description": "India"
+    },
+    {
+      "name": "us-east-1",
+      "description": "Virginia, USA"
+    },
+    {
+      "name": "us-west-2",
+      "description": "Arizona, USA"
+    }
+  ]
+}

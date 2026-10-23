@@ -168,3 +168,33 @@ test("arrays, source links, offline status and coverage references are validated
     assert.throws(() => validatePricingDataset(input, observed));
   }
 });
+
+
+test("authorized snapshots preserve partial visibility while requiring the exact successful sub-source plan", () => {
+  const data = fiveProviderSnapshot();
+  data.collector.mode = "authorized";
+  data.collector.validationPolicy = "visible-catalog-v1";
+  for (const source of data.sources) {
+    const selections = source.provider === "nebius" ? ["nebius_public", "nebius_account"] : [source.provider];
+    source.collectionStatus = source.provider === "nebius" ? "partial" : "success";
+    source.sourceObservations = selections.map((selection: string, index: number) => ({
+      selection, status: selection === "nebius_account" ? "partial" : "success",
+      returned_count: selections.length === 1 ? source.offerCount : index === 0 ? 1 : source.offerCount - 1,
+      observed_at: source.fetchedAt, source_url: source.url,
+      limitations: selection === "nebius_account" ? [{ scope: "documented_public_region", status: "no_accessible_project" }] : [],
+    }));
+  }
+  data.coverage.collection_status = "partial";
+  data.coverage.source_summary.success_count = 4;
+  data.coverage.source_summary.unknown_count = 1;
+  assert.equal(validatePricingDataset(data, observed), data);
+  for (const mutate of [
+    (value: typeof data) => { value.collector.validationPolicy = "unknown"; },
+    (value: typeof data) => { value.coverage.collection_status = "success"; },
+    (value: typeof data) => { value.sources.find((source: { provider: string }) => source.provider === "nebius").sourceObservations[1].status = "failed"; },
+    (value: typeof data) => { value.sources.find((source: { provider: string }) => source.provider === "nebius").sourceObservations[1].limitations[0].status = "authentication_error"; },
+  ]) {
+    const changed = structuredClone(data); mutate(changed);
+    assert.throws(() => validatePricingDataset(changed, observed));
+  }
+});

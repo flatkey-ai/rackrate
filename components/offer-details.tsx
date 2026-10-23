@@ -9,7 +9,10 @@ import {
   formatOriginalInstancePrice,
   formatOriginalPrice,
   priceBasisLabel,
+  sourceEvidenceLabel,
 } from "@/lib/pricing";
+
+import { publishedRegionCodes, priceLocationQualifier } from "@/lib/region-matching";
 
 type PublicOfferDetails = Offer & {
   location?: Record<string, unknown> | null;
@@ -52,7 +55,7 @@ function DetailList({ items }: { items: DetailItem[] }) {
 export function OfferDetails({ offer }: { offer: Offer }) {
   const published = offer as PublicOfferDetails;
   const unit = billingUnitLabel(offer);
-  const regions = offer.regions ?? [];
+  const regions = publishedRegionCodes(offer);
   const zones = offer.zones ?? [];
   const conditions = offer.conditions ?? [];
   const nodeUnit = offer.instanceBillingUnit === "instance-month" ? "node / month" : "node / hour";
@@ -98,7 +101,7 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   const locationAndTerms: DetailItem[] = [
     ["Regions", regions.length ? regions.join(" · ") : absent],
     ["Availability zones", zones.length ? zones.join(" · ") : absent],
-    ["Geographic scope", offer.regionScope ?? offer.geographicScope ?? absent],
+    ["Geographic scope", priceLocationQualifier(offer) || offer.regionScope || offer.geographicScope || absent],
     ["Purchase model", offer.rentalType],
     ["Billing period", unit],
     ["Price basis", priceBasisLabel(offer)],
@@ -119,7 +122,7 @@ export function OfferDetails({ offer }: { offer: Offer }) {
   if (published.taxScope) locationAndTerms.push(["Tax treatment", published.taxScope]);
 
   const source: DetailItem[] = [
-    ["Evidence", offer.dataStatus === "official-page" ? "Official public source" : "Dated reference / not live"],
+    ["Evidence", sourceEvidenceLabel(offer)],
     ["Original source", <a href={offer.sourceUrl} target="_blank" rel="nofollow noreferrer">{offer.sourceUrl} ↗</a>],
     ["Observed at", <time dateTime={offer.observedAt}>{timestamp(offer.observedAt)}</time>],
     ["Quote status", offer.quoteStatus === "contact_sales" ? "Contact sales; no public numeric price" : offer.quoteStatus === "starting_at" ? "Starting price; final quote can differ" : "Published quote"],
@@ -131,6 +134,6 @@ export function OfferDetails({ offer }: { offer: Offer }) {
     <section className="quote-detail-section"><h4>Configuration</h4><DetailList items={configuration} />{resources.length > 0 && <DetailList items={resources} />}</section>
     <section className="quote-detail-section"><h4>Price &amp; exchange rate</h4><DetailList items={price} /><p>Monthly prices stay monthly. Currency conversion does not include payment fees or exchange spreads.</p></section>
     <section className="quote-detail-section"><h4>Location &amp; terms</h4><DetailList items={locationAndTerms} />{conditions.length > 0 && <ul className="quote-detail-notes">{conditions.map((condition, index) => <li key={index}>{condition}</li>)}</ul>}</section>
-    <section className="quote-detail-section"><h4>Source</h4><DetailList items={source} /><p>{offer.dataStatus === "seed" ? "This is a historical observation. Its original availability does not describe current inventory." : "A public price does not confirm current stock, purchase eligibility or the final checkout total."}</p></section>
+    <section className="quote-detail-section"><h4>Source</h4><DetailList items={source} /><p>{offer.dataStatus === "seed" ? "This is a historical observation. Its original availability does not describe current inventory." : "This source quote does not confirm current stock, eligibility or the final checkout total. Account estimates apply to the collecting account."}</p></section>
   </div>;
 }

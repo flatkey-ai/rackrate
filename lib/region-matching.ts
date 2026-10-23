@@ -1,4 +1,5 @@
 import type { Offer, RegionProfile } from "./data";
+import { sharedCatalogLocations, isSharedCatalogPrice } from "./catalog-applicability.ts";
 
 export const REGION_MAPPING_SOURCES = {
   azure: "https://learn.microsoft.com/en-us/azure/reliability/regions-list",
@@ -48,7 +49,7 @@ type LocatedOffer = Pick<Offer, "providerSlug" | "region" | "regions" | "country
   computeCountries?: string[];
   locationSource?: Record<string, unknown> | null;
   priceScope?: string | null;
-};
+} & Partial<Pick<Offer, "applicableRegions" | "applicableCountries" | "priceApplicability" | "capacityLocations" | "sourceType" | "sourceUrl" | "accountScope" | "dataStatus">>;
 
 const unpublished = /^(?:not published|unknown|unspecified|n\/?a)$/i;
 
@@ -59,7 +60,9 @@ function mappingFor(provider: string, code: string): RegionMapping | undefined {
 
 /** Preserve explicit source labels, including a deliberately published Global
  * label. An absent label is never promoted to Global. */
-export function publishedRegionCodes(offer: Pick<Offer, "region" | "regions">): string[] {
+export function publishedRegionCodes(offer: Pick<Offer, "region" | "regions"> & Partial<Offer>): string[] {
+  const shared = sharedCatalogLocations(offer);
+  if (shared.length) return shared.map((item) => item.region);
   const labels = offer.regions ?? (offer.region ? [offer.region] : []);
   return [...new Set(labels.filter((entry) => entry.trim() && !unpublished.test(entry.trim())))];
 }
@@ -77,6 +80,8 @@ export function isRegionSpecificPrice(offer: Pick<Offer, "region" | "regions" | 
 }
 
 export function getOfferCountryCodes(offer: LocatedOffer): string[] {
+  const shared = sharedCatalogLocations(offer);
+  if (shared.length) return [...new Set(shared.map((item) => item.country_code))];
   if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return [];
   const explicit = /^[A-Z]{2}$/.test(offer.countryCode) && !["EU", "GL"].includes(offer.countryCode) ? [offer.countryCode] : [];
   const declared = (offer.computeCountries ?? []).filter((code) => /^[A-Z]{2}$/.test(code) && !["EU", "GL"].includes(code));
@@ -93,6 +98,8 @@ export function getOfferCountryCodes(offer: LocatedOffer): string[] {
  * when none of the record's documented codes contradict that country. */
 export function publishedRegionsForCountry(offer: LocatedOffer, country: string): string[] {
   const codes = publishedRegionCodes(offer);
+  const shared = sharedCatalogLocations(offer);
+  if (shared.length) return shared.filter((item) => country === "all" || item.country_code === country).map((item) => item.region);
   if (country === "all") return codes;
   const explicit = (offer.countryCode === country || (offer.computeCountries?.length === 1 && offer.computeCountries[0] === country))
     && !["EU", "GL"].includes(country);
@@ -127,6 +134,8 @@ export function publishedZonesForSelection(offer: LocatedOffer & Pick<Offer, "zo
 }
 
 export function offerMatchesRegion(offer: LocatedOffer, region: Pick<RegionProfile, "countryCodes" | "regionNames">): boolean {
+  const shared = sharedCatalogLocations(offer);
+  if (shared.length) return shared.some((item) => region.countryCodes.includes(item.country_code) || region.regionNames.includes(item.region));
   if (offer.priceScope && !["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(offer.priceScope)) return false;
   if (offer.countryCode && region.countryCodes.includes(offer.countryCode)) return true;
   const codes = publishedRegionCodes(offer);
@@ -137,6 +146,8 @@ export function offerMatchesRegion(offer: LocatedOffer, region: Pick<RegionProfi
 /** A readable source name plus the original code. Unknown codes remain visible
  * without assigning a country or assuming they share another provider's region. */
 export function publishedRegionLabel(offer: LocatedOffer, code: string): string {
+  const shared = sharedCatalogLocations(offer).find((item) => item.region === code);
+  if (shared) return shared.description ? `${shared.description} (${code})` : `${shared.country_code} (${code})`;
   const location = offer.location;
   const sourceName = location?.region === code && typeof location.region_name === "string" ? location.region_name.trim() : "";
   const name = sourceName || mappingFor(offer.providerSlug, code)?.name;
@@ -152,4 +163,14 @@ export function regionMappingSources(offers: readonly LocatedOffer[]): string[] 
       return mapped ? [mapped] : [];
     })];
   }))];
+}
+
+export function priceLocationQualifier(offer: Offer): string {
+  if (isSharedCatalogPrice(offer)) return "Same catalog price in listed regions";
+  return publishedRegionCodes(offer).length > 0 && !isRegionSpecificPrice(offer)
+    ? "Platform coverage · regional price not verified" : "";
+}
+
+export function hasVerifiedPriceLocation(offer: Offer): boolean {
+  return isRegionSpecificPrice(offer) || isSharedCatalogPrice(offer);
 }
