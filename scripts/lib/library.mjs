@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.7.0";
-export const LIBRARY_COMMIT = "3439e05d096645ed5d41df7ed78daacbb9b8f80a";
+export const LIBRARY_VERSION = "0.22.0";
+export const LIBRARY_COMMIT = "7c1722de4cf1c47e924e6d9502d6c0ab4d43393e";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -40,13 +40,72 @@ result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
 
+export function collectionMode(value = process.env.RACKRATE_COLLECTION_MODE) {
+  const mode = value || "public";
+  if (!["public", "authorized"].includes(mode)) throw new Error("RACKRATE_COLLECTION_MODE must be public or authorized");
+  return mode;
+}
+
+export const AUTHORIZED_SECRET_NAMES = Object.freeze([
+  "RACKRATE_LAMBDA_STORAGE_STATE_JSON", "RACKRATE_AUTODL_STORAGE_STATE_JSON",
+  "RACKRATE_UCLOUD_CONSOLE_SESSION_JSON", "RACKRATE_NEBIUS_ACCESS_TOKEN",
+]);
+
+export function collectionEnvironment(mode, env = process.env) {
+  // No unrelated application/API credentials, dotenv selectors or source overrides
+  // enter the child. PYTHONPATH supports an explicit local source test checkout.
+  const allowed = ["PATH", "HOME", "LANG", "LC_ALL", "TZ", "TMPDIR", "TEMP", "TMP", "SystemRoot", "PYTHONPATH"];
+  const output = Object.fromEntries(allowed.filter((key) => typeof env[key] === "string").map((key) => [key, env[key]]));
+  if (collectionMode(mode) === "authorized") {
+    const authMode = env.RACKRATE_NEBIUS_AUTH_MODE || "token";
+    if (!["token", "oidc"].includes(authMode)) throw new Error("RACKRATE_NEBIUS_AUTH_MODE must be token or oidc");
+    output.RACKRATE_NEBIUS_AUTH_MODE = authMode;
+    const required = authMode === "token" ? AUTHORIZED_SECRET_NAMES : [
+      ...AUTHORIZED_SECRET_NAMES.slice(0, 3), "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+      "GITHUB_REPOSITORY", "GITHUB_REF", "RACKRATE_NEBIUS_SERVICE_ACCOUNT_ID", "RACKRATE_NEBIUS_OIDC_AUDIENCE",
+    ];
+    for (const key of required) {
+      if (typeof env[key] !== "string" || !env[key].trim()) throw new Error("Authorized collection requires all configured credentials; existing data was preserved");
+      output[key] = env[key];
+    }
+  }
+  return output;
+}
+
+export async function collectAuthorizedLibrary({ python = collectionPython(), exec = execFile, env = process.env } = {}) {
+  const childEnv = collectionEnvironment("authorized", env);
+  let stdout;
+  try {
+    ({ stdout } = await exec(python, [join(repositoryRoot, "scripts", "collect-authorized.py"), LIBRARY_VERSION], {
+      encoding: "utf8", timeout: 35 * 60 * 1000, maxBuffer: 64 * 1024 * 1024, env: childEnv,
+    }));
+  } catch {
+    // child_process errors can contain stdout/stderr, command and environment.
+    throw new Error("Authorized collection failed; check credential validity or source changes. Existing data was preserved");
+  }
+  let result;
+  try { result = JSON.parse(stdout); }
+  catch { throw new Error("gpu-price-monitor did not return valid JSON; existing data was preserved"); }
+  if (result.collection_mode !== "authorized") throw new Error("Authorized collection mode mismatch");
+  validatePublicResult(result);
+  return result;
+}
+
+export function collectLibrary(options = {}) {
+  return collectionMode(options.mode) === "authorized" ? collectAuthorizedLibrary(options) : collectPublicLibrary(options);
+}
+
 export async function collectPublicLibrary({
   python = collectionPython(),
   exec = execFile,
 } = {}) {
-  const { stdout } = await exec(python, ["-c", PYTHON_COLLECTION_CODE], {
-    encoding: "utf8", timeout: 12 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
-  });
+  let stdout;
+  try {
+    ({ stdout } = await exec(python, ["-c", PYTHON_COLLECTION_CODE], {
+      encoding: "utf8", timeout: 12 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+      env: collectionEnvironment("public"),
+    }));
+  } catch { throw new Error("Public collection failed; existing data was preserved"); }
   let result;
   try { result = JSON.parse(stdout); }
   catch { throw new Error("gpu-price-monitor did not return valid JSON; existing data was preserved"); }
@@ -78,8 +137,42 @@ function strings(value, label) {
   return [...value];
 }
 
+const AUTHORIZED_PLAN = {
+  nebius: ["nebius_public", "nebius_account"], crusoe: ["crusoe"],
+  lambda: ["lambda"], ucloud: ["ucloud"], autodl: ["autodl"],
+};
+const SAFE_NEBIUS_LIMITS = new Set([
+  "documented_public_region:no_accessible_project",
+  "other_accounts_and_contracts:outside_authorized_account_scope",
+  "regional_compute_tariff:compute_tariff_unavailable",
+]);
+
+export function authorizedSourceVerified(source) {
+  const expected = AUTHORIZED_PLAN[source?.provider];
+  const observations = source?.source_observations;
+  if (!expected || !Array.isArray(observations) || observations.length !== expected.length || source.error) return false;
+  let count = 0, partial = false;
+  for (let index = 0; index < expected.length; index++) {
+    const item = observations[index];
+    if (item.selection !== expected[index] || !Number.isSafeInteger(item.returned_count) || item.returned_count < 1
+        || !Number.isFinite(Date.parse(item.observed_at)) || !Array.isArray(item.limitations)) return false;
+    if (item.status === "partial") {
+      const allowed = item.selection === "nebius_account" ? SAFE_NEBIUS_LIMITS
+        : item.selection === "autodl" ? new Set(["market_region_country:country_not_verified"]) : new Set();
+      if (!item.limitations.length || item.limitations.some((gap) => !allowed.has(`${gap.scope}:${gap.status}`))) return false;
+      partial = true;
+    } else if (item.status !== "success" || item.limitations.length) return false;
+    count += item.returned_count;
+  }
+  return source.returned_count === count && source.status === (partial ? "partial" : "success");
+}
+
 export function validatePublicResult(result) {
-  if (result?.schema_version !== 1 || result.status !== "success") {
+  const authorized = result?.collection_mode === "authorized";
+  const validMode = !result?.collection_mode || ["public", "authorized"].includes(result.collection_mode);
+  const statusValid = result?.status === "success" || (authorized && result?.status === "partial");
+  if (result?.schema_version !== 1 || !validMode || !statusValid
+      || (authorized && result.validation_policy !== "visible-catalog-v1")) {
     // Expose known source names and error codes, never arbitrary upstream text.
     const failures = Array.isArray(result?.provider_results) ? result.provider_results
       .filter((source) => REQUIRED_PROVIDERS.includes(source?.provider)
@@ -96,7 +189,7 @@ export function validatePublicResult(result) {
     if (sources.has(source.provider) || !REQUIRED_PROVIDERS.includes(source.provider)) {
       throw new Error(`Unexpected or duplicate source: ${source.provider}`);
     }
-    if (source.status !== "success" || source.error || source.returned_count < 1) {
+    if ((authorized ? !authorizedSourceVerified(source) : source.status !== "success" || source.error) || source.returned_count < 1) {
       throw new Error(`Required public source failed: ${source.provider}`);
     }
     timestamp(source.observed_at, `${source.provider} timestamp`);
@@ -107,8 +200,11 @@ export function validatePublicResult(result) {
     const count = result.prices.filter((quote) => quote.provider === provider).length;
     if (count !== sources.get(provider).returned_count) throw new Error(`Source count mismatch: ${provider}`);
   }
+  if (authorized && result.status !== (result.provider_results.some((source) => source.status === "partial") ? "partial" : "success")) {
+    throw new Error("Authorized collection status does not match its source observations");
+  }
   const coverage = result.coverage;
-  if (coverage?.collection_status !== "success" || coverage.scope !== "returned_quotes"
+  if (coverage?.collection_status !== result.status || coverage.scope !== "returned_quotes"
       || !Array.isArray(coverage.models) || !Array.isArray(coverage.extra_models)
       || !Array.isArray(coverage.excluded_quote_indices) || coverage.excluded_quote_indices.length) {
     throw new Error("Complete model coverage metadata is required");
@@ -148,6 +244,12 @@ function stableId(quote) {
     basis: quote.price_basis, tier: quote.pricing_tier, cloud: quote.cloud_tier,
     regions: [...(quote.regions ?? [])].sort(), zones: [...(quote.zones ?? [])].sort(),
     resources: quote.resources ?? {}, conditions: quote.conditions ?? {},
+    ...(quote.collection_source ? { collectionSource: quote.collection_source, sourceType: quote.source_type, sourceUrl: quote.source_url } : {}),
+    ...(quote.source_partition ? { sourcePartition: quote.source_partition } : {}),
+    ...(quote.visible_source ? { visibleSource: quote.visible_source } : {}),
+    ...(quote.source_conditions ? { sourceConditions: quote.source_conditions } : {}),
+    ...(quote.configuration_id ? { configurationId: quote.configuration_id } : {}),
+    ...(quote.requested_configuration ? { requestedConfiguration: quote.requested_configuration } : {}),
     selectedConfiguration: quote.selected_configuration ?? {},
     commitment: quote.minimum_commitment ?? null,
     promotionActivity: quote.promotion?.activity_id ?? null,
@@ -179,6 +281,8 @@ export function modelSlug(model, vendor) {
 function conditionsFor(quote) {
   return [
     ...(quote.notes ?? []),
+    ...(Array.isArray(quote.conditions) ? quote.conditions : []),
+    ...(Array.isArray(quote.source_conditions) ? quote.source_conditions : []),
     ...(quote.pricing_tier ? [`Pricing tier: ${quote.pricing_tier}`] : []),
     ...(quote.cloud_tier ? [`Cloud tier: ${quote.cloud_tier}`] : []),
     ...(quote.membership_required ? ["Membership required; eligibility not verified"] : []),
@@ -252,7 +356,14 @@ export function normalizeLibraryResult(result) {
       pricingTier: quote.pricing_tier ?? null, cloudTier: quote.cloud_tier ?? null,
       membershipRequired: quote.membership_required ?? null, membershipDiscount: quote.membership_discount ?? null,
       promotion: quote.promotion ?? null, selectedConfiguration: quote.selected_configuration ?? null,
-      sourceConditions: quote.conditions ?? null, minimumCommitment: quote.minimum_commitment ?? null,
+      sourceConditions: quote.source_conditions ?? quote.conditions ?? null, minimumCommitment: quote.minimum_commitment ?? null,
+      quoteConditions: quote.conditions ?? null, requestedConfiguration: quote.requested_configuration ?? null,
+      configurationId: quote.configuration_id ?? null, imageSelection: quote.image_selection ?? null,
+      networkSelection: quote.network_selection ?? null, normalization: quote.normalization ?? null,
+      storageQuote: quote.storage_quote ?? null, fullConfigurationPrice: quote.full_configuration_price ?? null,
+      applicableRegions: quote.applicable_regions ?? [], applicableCountries: quote.applicable_countries ?? [],
+      priceApplicability: quote.price_applicability ?? null, capacityLocations: quote.capacity_locations ?? [],
+      collectionSource: quote.collection_source ?? null, visibleSource: quote.visible_source ?? null,
       pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
       region: regions.length ? regions.join(", ") : "Not published", regions, zones,
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
@@ -324,11 +435,12 @@ export function buildRackRateDataset(_current, libraryResult) {
   return {
     schemaVersion: 2,
     generatedAt: libraryResult.collected_at,
-    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: "public-only", providers: [...REQUIRED_PROVIDERS] },
+    collector: { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT, mode: libraryResult.collection_mode === "authorized" ? "authorized" : "public-only", validationPolicy: libraryResult.validation_policy ?? null, providers: [...REQUIRED_PROVIDERS],
+      execution: libraryResult.assembly?.method === "recorded-source-replay" ? "recorded-source-replay" : "live-collection" },
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
-        status: "ok", fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
+        status: "ok", collectionStatus: source.status, sourceObservations: source.source_observations ?? null, fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
     ],
     offers,
   };

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createPricingData, type Offer, type PricingDataset } from "./data.ts";
-import { getOfferCountryCodes, isRegionSpecificPrice, matchesCountryRegionSelection, offerMatchesRegion, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection, regionMappingSources } from "./region-matching.ts";
+import { getOfferCountryCodes, isRegionSpecificPrice, matchesCountryRegionSelection, offerMatchesRegion, publishedRegionLabel, publishedRegionsForCountry, publishedZonesForSelection, regionMappingSources, priceLocationQualifier } from "./region-matching.ts";
 import { cheapestComparableOffer } from "./pricing.ts";
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
@@ -160,4 +161,61 @@ test("a partial multi-region selection cannot borrow zones with no published reg
   assert.deepEqual(publishedZonesForSelection(multi, "US", "us-central1"), []);
   assert.deepEqual(publishedZonesForSelection(multi, "US", "eu-north1"), []);
   assert.deepEqual(multi.zones, ["zone-north", "zone-central"]);
+});
+
+
+function sharedCatalogQuote(): Offer {
+  return quote({ providerSlug: "lambda", region: "Not published", regions: [], computeCountries: [], countryCode: "",
+    sourceType: "official_internal_api", sourceUrl: "https://cloud.lambda.ai/api/internal/dashboard/v1/instance-types",
+    accountScope: "authenticated_console_catalog", priceScope: "unlocated_catalog",
+    applicableRegions: ["us-test", "india-test"], applicableCountries: ["IN", "US"],
+    capacityLocations: [{ name: "us-test", description: "Texas, USA" }, { name: "india-test", description: "India" }],
+    priceApplicability: { basis: "official_console_shared_sku_catalog", scope: "currently_selectable_standard_regions",
+      verification_status: "verified_current_frontend", independent_region_quotes: false, final_checkout_verified: false,
+      locations: [{ region: "us-test", country_code: "US", description: "Texas, USA" }, { region: "india-test", country_code: "IN", description: "India" }],
+      evidence: { source_url: "https://cloud.lambda.ai/static/cloud-app/assets/main-BdOFEme8.js", source_sha256: "becc45eec9df69c8089947297b2958c047a618fedf8dbb6787806c46c346fa6c" } },
+  });
+}
+
+test("verified shared-SKU locations join country and region without becoming independent regional quotes", () => {
+  const offer = sharedCatalogQuote();
+  const before = JSON.stringify(offer);
+  assert.deepEqual(getOfferCountryCodes(offer), ["US", "IN"]);
+  assert.deepEqual(publishedRegionsForCountry(offer, "IN"), ["india-test"]);
+  assert.equal(matchesCountryRegionSelection(offer, "IN", "india-test"), true);
+  assert.equal(matchesCountryRegionSelection(offer, "US", "india-test"), false);
+  assert.equal(offerMatchesRegion(offer, { countryCodes: ["IN"], regionNames: [] }), true);
+  assert.equal(isRegionSpecificPrice(offer), false);
+  assert.equal(priceLocationQualifier(offer), "Same catalog price in listed regions");
+  assert.equal(JSON.stringify(offer), before);
+  assert.deepEqual(offer.regions, []);
+});
+
+test("capacity alone, public prices, forged evidence and mismatched country relations never inherit shared catalog scope", () => {
+  for (const mutate of [
+    (offer: Offer) => { offer.sourceType = "public_page"; },
+    (offer: Offer) => { offer.priceApplicability = null; },
+    (offer: Offer) => { offer.applicableCountries = ["US"]; },
+    (offer: Offer) => { offer.capacityLocations = []; },
+    (offer: Offer) => { offer.priceApplicability!.evidence = { source_sha256: "forged" }; },
+  ]) {
+    const offer = sharedCatalogQuote(); mutate(offer);
+    assert.deepEqual(getOfferCountryCodes(offer), []);
+    assert.equal(matchesCountryRegionSelection(offer, "US", "us-test"), false);
+    assert.equal(priceLocationQualifier(offer), "");
+  }
+});
+
+
+test("captured v0.22 Lambda country/region evidence works with the exact official frontend URL", () => {
+  const captured = JSON.parse(readFileSync(new URL("./fixtures/lambda-shared-catalog-2026-10-23.json", import.meta.url), "utf8"));
+  const offer = quote(captured);
+  assert.deepEqual([...getOfferCountryCodes(offer)].sort(), captured.applicableCountries);
+  assert.ok(captured.applicableRegions.length > 0);
+  for (const entry of captured.priceApplicability.locations) {
+    assert.equal(matchesCountryRegionSelection(offer, entry.country_code, entry.region), true);
+    assert.equal(matchesCountryRegionSelection(offer, "CN", entry.region), false);
+  }
+  assert.equal(priceLocationQualifier(offer), "Same catalog price in listed regions");
+  assert.equal(isRegionSpecificPrice(offer), false);
 });

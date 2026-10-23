@@ -69,7 +69,8 @@ export function createSnapshotStore({
   now = Date.now,
   cacheMs = SNAPSHOT_CACHE_MS,
   timeoutMs = 10_000,
-  maxBytes = 8 * 1024 * 1024,
+  // Full signed-in marketplace catalogs exceed the earlier public-only 8 MiB cap.
+  maxBytes = 64 * 1024 * 1024,
 }: SnapshotOptions) {
   let dataset = validatePricingDataset(fallback, now());
   let hash = snapshotHash(JSON.stringify(dataset));

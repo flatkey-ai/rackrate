@@ -1,5 +1,5 @@
 import type { Offer } from "./data";
-import { isRegionSpecificPrice, publishedRegionCodes } from "./region-matching.ts";
+import { hasVerifiedPriceLocation, publishedRegionCodes } from "./region-matching.ts";
 import { isAccountSpecificPrice } from "./pricing.ts";
 
 export type OfferAudience = "regular" | "member" | "conditional";
@@ -110,7 +110,7 @@ export function isLowestPriceCandidate(offer: Offer, requireRegionalPrice = fals
     && offer.dataStatus === "official-page" && offer.availability !== "unavailable"
     && offer.quoteStatus === "quoted" && normalizedBasis(offer) === "full_price"
     && !hasAdditionalEligibility(offer)
-    && (!requireRegionalPrice || isRegionSpecificPrice(offer));
+    && (!requireRegionalPrice || hasVerifiedPriceLocation(offer));
 }
 
 function lowestOffers(offers: readonly Offer[], audience: "regular" | "member", requireRegionalPrice = false): Offer[] {

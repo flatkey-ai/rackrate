@@ -1,52 +1,91 @@
-# Daily GPU price refresh
+# Daily GPU price publication
 
-Collection is scheduled once each day at **10:30 Asia/Shanghai**, implemented as `30 2 * * *` (02:30 UTC) in `.github/workflows/refresh-data.yml`. GitHub may queue a scheduled job; 10:30 is its scheduled start, not a guaranteed completion time.
+GitHub Actions runs `refresh-data.yml` at **10:30 Asia/Shanghai** (`02:30 UTC`). GitHub schedules may start late. Collection and publication run in GitHub's runner; no open laptop, Codex session, or 11agents job is required. A successful run checks the data, runs tests/type checking/build, commits the current data and dated history shards on `main`, then verifies the published website snapshot. Existing duplicate-day and manual `force_refresh` behavior remains in place. A public-mode snapshot or an explicitly labelled offline replay does not suppress an authorized-mode run on the same day.
 
-## Cloud execution and publication
+The collector is pinned to **gpu-price-monitor 0.22.0**, immutable commit `7c1722de4cf1c47e924e6d9502d6c0ab4d43393e`. The library only collects; RackRate owns credentials delivery, scheduling, currency conversion, historical observations and publication.
 
-1. Check the verified main-branch snapshot. If all five required sources already completed after today's 10:30 China-time cutoff, skip another collection.
-2. When collection is due, install the immutable library revision in `requirements-collector.txt` and its browser dependency. Collect exactly Nebius, Crusoe, Lambda, UCloud and AutoDL through the anonymous library interface. No additional collector, cloud-provider keys, login state, recharge or GPU provisioning is used.
-3. Read the latest published ECB reference rates anonymously. Validate prices, currencies, billing periods, source identity, geography and FX date. Preserve original amounts and convert only currency; monthly rates stay per month. Save the raw library response, FX snapshot, adapted offers and history.
-4. Run tests, typechecking and a production build before committing the four data files to main. Collection or validation failure leaves the last verified main-branch data intact.
-5. The website reads the single self-contained public `main/data/offers.json` file at request time. Source metadata, GPU/provider catalogs and FX belong to that same snapshot; the website does not combine independently fetched main-branch files.
-6. GitHub Actions calls the public status endpoint to warm the server's snapshot, then checks its publication state, exact file SHA-256, timestamps, FX date, source counts and offline/contact-sales counts. It also fetches the homepage and checks its `rackrate-pricing-snapshot` meta marker against that same SHA-256. A run is successful only when both API and page match. This step runs even when duplicate collection was skipped.
+## Choose the collection mode
 
-Daily data publication uses no Railway deployment token, existing CLI session or desktop process. The website must first have the runtime snapshot reader deployed; subsequent pricing refreshes do not deploy the application. Changes to application code still require a normal deployment. 11agents is not part of this pipeline.
+Set the repository **Actions variable** `RACKRATE_COLLECTION_MODE`:
 
-## Propagation, cache and failure behavior
+| Value | Behavior |
+| --- | --- |
+| Unset or `public` | Existing anonymous collection of Nebius, Crusoe, Lambda, UCloud and AutoDL. No provider credentials enter Python. |
+| `authorized` | Public prices plus the expressly selected signed-in catalogs below. All configured credentials are required. No anonymous fallback after an account failure. Restricted to `main`. |
 
-The server uses a 60-second update cache, merges simultaneous refreshes and validates a complete candidate before replacing its active snapshot. GitHub raw content may be cached by its CDN for several minutes. A data commit is therefore not an immediate website-update guarantee; the verifier retries for up to six minutes and fails if the expected bytes are not visible.
+**Current anonymous limitation (verified 2026-10-23):** the v0.22.0 public UCloud monthly-promotion parser returns `parse_failed`, so the default five-source public plan currently stops without publishing. Crusoe's public catalog succeeds. The requested UCloud hourly UHost scope is the authorized console path, which remains pending live cloud validation; this change does not substitute CompShare or monthly prices to manufacture a successful run.
 
-An unavailable, incomplete, malformed or older upstream snapshot cannot replace newer verified data. The server serves its last verified snapshot, or the bundled snapshot after a cold start, with publication metadata that indicates fallback/staleness. The public status endpoint reports `publication.mode`, `status`, `sha256`, `sourceUrl`, `checkedAt`, `lastError` and `stale`. The verifier requires `mode=github-public-snapshot`, `status=current`, `stale=false` and the expected hash, so a fallback does not silently pass publication checks.
+Unknown modes fail before installing or collecting. An authorized run on another branch fails before credentials are supplied. Pull-request checks use synthetic credential fixtures only. Changing a mode does not upload credentials or configure Nebius IAM trust.
 
-The public verifier only performs GET requests. It cannot choose the server's upstream URL, activate another commit or change credentials. A verification failure after a successful data commit leaves that validated data on main; a later normal manual run can retry publication checks without collecting again. Verified collection artifacts remain available for diagnosis.
+## Authorized sources and scope
 
-`publication.status=current` means the website serves the latest verified GitHub snapshot. It does not mean the providers were collected today. `publication.checkedAt` is the snapshot check time; use `generatedAt`, source `fetchedAt` and quote `observedAt` to assess collection freshness. A successful fetch proves what the official source returned at that time, not current stock or a final account-specific checkout price. Historical references and offline listings keep their own dates and labels.
+| Provider | Sources selected by code | Meaning |
+| --- | --- | --- |
+| Nebius | Anonymous regional Spot API + independent public on-demand website JSON; separately the authorized project/platform catalog and calculator | Every source observation remains separate. Account estimates apply to accessible projects and the explicit VM configuration; compute and separately billed disk costs retain their own fields. No region is borrowed from another source. |
+| Lambda | `visible`: public price page + signed-in instance and reserved-cluster catalogs | Public and account observations remain separate; GPU count, hardware differences, cluster term and original price fields remain attached. Only verified shared-SKU selectable regions are searchable, labelled “Same catalog price in listed regions”. They are not independent regional prices or a worldwide uniform price. |
+| Crusoe | Complete public GPU price page | Published numeric and contact-sales rows stay distinct; no private contract API or assumed region-wide rates. |
+| AutoDL | Signed-in marketplace API, every returned page | Ordinary and member rates remain distinct. Missing country evidence stays missing; it is never filled from the region name or the platform's headquarters. |
+| UCloud | Signed-in UHost catalog discovery and per-configuration hourly quotations | Region, zone, GPU count, CPU, RAM, network mode, compatible free image and minimum boot disk remain attached. This does not enumerate arbitrary add-ons or reserved billing. |
 
-## Manual operation and Codex supervision
+The website keeps all source observations, including no-region public listings and unpriced contact-sales rows. It does not truncate to the strict regional CSV or merge records solely because model/price match. Account estimates and signed-in catalogs are labelled separately from public prices. USD conversion preserves the original amount, currency, hourly/monthly unit and ECB provenance; no monthly-to-hourly assumptions are introduced.
 
-Use GitHub Actions **Refresh public GPU pricing data** to run or inspect the workflow. `force_refresh` defaults to false. Only an explicit manual `workflow_dispatch` with `force_refresh=true` bypasses today's successful collection; scheduled events ignore force. Branch-dispatched runs always collect and validate, but do not commit to main or query production publication.
+## Credential delivery — requires account owner's cloud-storage approval
 
-The optional daily Codex check at **10:45 Asia/Shanghai** verifies the cloud workflow, source statuses and live snapshot. It can dispatch the same workflow once if today's run is missing or failed and no refresh is running. It follows an active workflow instead of starting a duplicate. A normal retry keeps `force_refresh=false`; a completed collection can then reuse the main snapshot and repeat only cloud verification. This extra supervision requires Codex to be available, but daily collection and publication run entirely in the cloud without it.
+**Setup status, 2026-10-23:** the account owner separately approved GitHub credential storage and Nebius read-only OIDC setup. The three Lambda/AutoDL/UCloud session secrets below have been configured; the authorized workflow has not yet completed a live cloud run. Nebius trust setup and first-run reconciliation are still being completed. Local session-storage permission alone would not authorize this cloud upload.
 
-To verify production against the `data/offers.json` bytes in a clean main checkout:
+After approval, add these **GitHub Actions repository secrets** from the owner's privately exported session files, using the GitHub settings UI or another approved secret-delivery method. Never paste their values in logs, issues, PRs or source files.
 
-```bash
-node scripts/verify-deployment.mjs
-```
+| Secret name | Value |
+| --- | --- |
+| `RACKRATE_LAMBDA_STORAGE_STATE_JSON` | Full JSON of Lambda's minimal storage state (`cookies` + `origins`). |
+| `RACKRATE_AUTODL_STORAGE_STATE_JSON` | Full JSON of AutoDL's minimal storage state (`cookies` + `origins`, including its login token in local storage). |
+| `RACKRATE_UCLOUD_CONSOLE_SESSION_JSON` | Minimal UCloud JSON with `format=ucloud-console-visible-cookie-v1`, `origin=https://console.ucloud.cn` and the login `cookie`. |
+| `RACKRATE_NEBIUS_ACCESS_TOKEN` | A currently valid external Nebius Bearer token, when the Nebius auth mode is `token`. This token is short-lived. |
 
-For a local test server only:
+Credentials are injected only into the collection step. The bridge removes them from inherited process environment, constructs an explicit allowlisted `Settings.from_env(mapping, env_file=None)`, and creates unique `0700` temporary directories with `0600` session files. Files are removed in `finally`, including errors. The OIDC access token stays in process memory. Build/test/deploy steps and artifacts receive no credential files. The ephemeral runner is destroyed after the job; a hard runner kill cannot execute Python cleanup, so no credentials are written into the checkout or upload paths.
 
-```bash
-node scripts/verify-deployment.mjs --base-url http://localhost:3000
-```
+Publication uses allowlisted quote fields and reviewed nested configuration fields. Private metadata/account/parent/project identifiers and credential keys are removed, and any known credential value appearing in permitted output aborts the run. New nested schema fields fail closed for review rather than silently dropping a price-defining configuration. Child-process exceptions and upstream response bodies are not printed.
 
-The test origin changes only where the verifier sends its public GETs. It does not change the website's fixed GitHub source. No upload or deployment command runs during verification.
+## Optional Nebius OIDC (implemented, not yet production-validated)
 
-## Data checks
+`RACKRATE_NEBIUS_AUTH_MODE` is a repository Actions variable: unset/`token` uses the supplied token secret; `oidc` requests a new short-lived GitHub identity on each authorized run and exchanges it for a Nebius access token. It never falls back to a static token on failure.
 
-Confirm all five library provider results succeeded and inspect `coverage` for model gaps; model-family coverage is not a completeness or stock guarantee. The current dataset contains only this collection's offers, and the GPU directory omits models without such offers. Earlier records are preserved in dated history rather than re-observed as current prices. Check the USD main price, exact original amount/currency, dated FX source/rate, hourly versus monthly periods, unpublished geography, offline UCloud promotions and contact-sales rows. Ordinary/member rates, Spot/on-demand, hardware variants and GPU-component versus complete-instance costs retain their conditions. Missing or failed data is never a zero price.
+OIDC requires an operator-approved, separately configured Nebius service account with the minimal directory-read/calculator permissions and federated credential trust bound to:
 
-Preserve `price_scope`, `compute_countries` and `location_source` in the adapted offer. Only region- or zone-bound quotes support country-price filters and regional minima. A provider's platform coverage remains coverage; it is not expanded into prices in those countries. An offline promotional listing remains offline.
+- issuer `https://token.actions.githubusercontent.com`;
+- exact subject `repo:flatkey-ai/rackrate:ref:refs/heads/main`;
+- service account ID supplied as `RACKRATE_NEBIUS_SERVICE_ACCOUNT_ID`.
 
-The reusable library remains independently usable through Python and JSON CLI. It contains no RackRate storage, scheduling, publication endpoints or credentials.
+The service account ID and `RACKRATE_NEBIUS_OIDC_AUDIENCE` are repository Actions variables. The audience selects the value requested from GitHub and checked by this helper; it is not an audience field in Nebius's federated-credential configuration. Nebius trust binds issuer, exact federated subject and service account. The bridge requires an explicit audience with no guessed default. Service-account access may differ from a user's accessible projects, so its first run must be reconciled against the intended account scope.
+
+The job grants `id-token: write` at job scope, so that permission is available to all its steps (including dependency installation). The helper actually requests an identity **only** in `authorized` + `oidc` mode on `main`. Token/public modes do not request an identity. GitHub does not provide step-scoped permissions; changes to this workflow and its pinned dependencies need normal repository review.
+
+The helper validates the GitHub endpoint, exact repository/ref, token issuer/subject/audience/expiry, rejects redirects, uses the fixed Nebius STS HTTPS endpoint, and checks returned Bearer type, issued token type and lifetime. It never writes an access token to GitHub outputs, files, logs or artifacts. The exchange uses [Nebius's official STS REST endpoint](https://docs.nebius.com/iam/wif/configure) with the inbound service-account parameters from the [official SDK](https://github.com/nebius/pysdk/blob/main/src/nebius/base/service_account/federated_credentials.py).
+
+This implementation has deterministic mock tests. **The actual GitHub → Nebius trust exchange and service-account price scope still require live validation after approval.** No IAM account or trust has been created by this change. Do not describe this as already working automatic credential renewal.
+
+Lambda, AutoDL and UCloud currently use exported static sessions. Their expiry is provider-controlled; no supported unattended refresh mechanism is implemented here. They must be manually re-exported and the approved GitHub secret replaced when expired. Static Nebius tokens likewise require renewal unless OIDC has been configured and validated. Cloud scheduling is independent of the laptop; authentication cannot be promised to last indefinitely.
+
+## Failure, partial visibility and timestamps
+
+Missing, malformed or expired credentials, HTTP failures, parser changes, incomplete pagination, missing configuration prices, unknown coverage gaps and failed FX validation stop the run before dataset writes or a Git commit. There is no fallback to public sources and no new observation time assigned to earlier prices. The site continues displaying the last verified snapshot with its original timestamp. A fresh root collection time records completion; each quote and sub-source retains its own actual observation time.
+
+Two bounded non-request-failure cases are accepted while preserving `partial` status in raw results, coverage and source observations:
+
+- Nebius: another documented region has no accessible project, other accounts/contracts are outside scope, or the calculator explicitly returned no compute tariff for a configuration. A zero compute amount is not published as free GPU capacity.
+- AutoDL: marketplace rows were fully fetched and priced but the official region metadata does not establish a country for a named region (`market_region_country/country_not_verified`).
+
+Only the exact reviewed scope/status pairs and error codes are accepted. All other partial/failed sources stop publication. These limits do not become “all prices complete”. Source row counts and combined model coverage must match every retained observation. Explicitly sold-out inventory remains distinct from product retirement.
+
+## Operation and validation
+
+Run `python -m pip install -r requirements-collector.txt` and install Playwright Chromium for anonymous sources, then `bun install --frozen-lockfile`. `bun run data:refresh` defaults to public collection. For an approved authorized environment set the mode and selected credential variables; do not commit a local `.env`. The bridge does not auto-discover dotenv files.
+
+Checks: `python -m unittest discover -s scripts -p 'test_*.py'`, `bun run test`, `bun run typecheck`, `bun run build`. Python tests use synthetic secrets only. The live captured-source replay is an offline schema check, not a fresh network collection and not a cloud-authentication test.
+
+The existing website runtime loader still validates snapshot source counts, exact USD conversion and model indices. API and homepage verification retries for GitHub CDN/runtime cache propagation. `publication.status=current` means the latest verified GitHub snapshot, not necessarily a successful collection today. If a scheduled run fails, inspect its safe error message and last snapshot timestamp; fix the credential/source issue and manually rerun the workflow. Only `main` can publish the data commit.
+
+
+Full signed-in catalogs are substantially larger than anonymous price pages. All observations are retained; snapshot JSON is written compactly, and runtime download/page verification is bounded at 64 MiB. Raw data and each history shard are bounded at 80 MiB; a larger publication stops before any file write.
+
+History uses a schema-3 index in `data/price-history.json` and UTC-day files in `data/price-history/YYYY-MM-DD.json`. Existing schema-2 observations migrate without changing their original timestamps. New rows use each offer's actual source observation time; multiple observations on the same day are preserved, and replays merge only the same observation timestamp and offer ID. The 180-day retention policy is unchanged. All planned sizes are checked first; staged shards and index publish before `offers.json`, and expired shards are deleted only after successful publication. Historical rows are never silently removed to satisfy a file-size limit.

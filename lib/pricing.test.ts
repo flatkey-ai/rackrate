@@ -72,3 +72,12 @@ test("sorting keeps monthly periods separate while ordering converted hourly amo
   const input = [quote({ id: "usd", priceUsdPerGpuUnit: .01 }), quote({ id: "cny-month", sourceCurrency: "CNY", billingUnit: "GPU-month", priceUsdPerGpuUnit: .001 }), quote({ id: "cny-hour", sourceCurrency: "CNY", priceUsdPerGpuUnit: 14 })];
   assert.deepEqual(input.sort(compareOffers).map((entry) => entry.id), ["usd", "cny-hour", "cny-month"]);
 });
+
+
+test("source labels distinguish account estimates, signed-in catalogs and public prices", async () => {
+  const { sourceEvidenceLabel } = await import("./pricing.ts");
+  assert.equal(sourceEvidenceLabel({ dataStatus: "official-page", accountScope: "account_quote", sourceType: "official_quote_api" }), "Account estimate");
+  assert.equal(sourceEvidenceLabel({ dataStatus: "official-page", accountScope: "account_quote", sourceType: "official_internal_api" }), "Account quote");
+  assert.equal(sourceEvidenceLabel({ dataStatus: "official-page", accountScope: "authenticated_console_catalog" }), "Signed-in catalog");
+  assert.equal(sourceEvidenceLabel({ dataStatus: "official-page", accountScope: "public_catalog" }), "Public price");
+});

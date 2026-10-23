@@ -1,4 +1,5 @@
-import type { PricingDataset } from "./data";
+import type { Offer, PricingDataset } from "./data";
+import { sharedCatalogLocations } from "./catalog-applicability.ts";
 
 const FIVE_PROVIDERS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
 const LEGACY_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
@@ -79,7 +80,9 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   const generatedAt = time(data.generatedAt, nowMs + FIVE_MINUTES, "generatedAt");
   const ceiling = Math.min(nowMs, generatedAt) + FIVE_MINUTES;
   const collector = row(data.collector, "collector");
-  check(collector.name === "gpu-price-monitor" && collector.mode === "public-only"
+  const authorized = collector.mode === "authorized";
+  if (collector.execution !== undefined) check(["recorded-source-replay", "live-collection"].includes(String(collector.execution)), "collection execution");
+  check(collector.name === "gpu-price-monitor" && ["public-only", "authorized"].includes(String(collector.mode))
     && typeof collector.version === "string" && /^\d+\.\d+\.\d+$/.test(collector.version)
     && typeof collector.commit === "string" && /^[a-f0-9]{40}$/.test(collector.commit), "public collector identity");
   // Existing bundled snapshots remain readable at their original observation
@@ -91,6 +94,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
       && FIVE_PROVIDERS.every((provider) => declared.includes(provider)), "five-provider collector scope");
   }
   const REQUIRED = scoped ? FIVE_PROVIDERS : LEGACY_PROVIDERS;
+  if (authorized) check(scoped && collector.validationPolicy === "visible-catalog-v1", "authorized collection policy");
 
   const catalog = row(data.generatedCatalog, "generatedCatalog");
   const gpuSlugs = new Set<string>();
@@ -180,6 +184,10 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
           "catalog coverage is not a country price");
       }
     }
+    if (Array.isArray(offer.applicableRegions) && offer.applicableRegions.length) {
+      const locations = sharedCatalogLocations(offer as unknown as Offer);
+      check(locations.length === offer.applicableRegions.length, "shared catalog applicability evidence");
+    }
     if (offer.locationSource !== undefined && offer.locationSource !== null) {
       const locationSource = row(offer.locationSource, "location provenance");
       for (const key of ["source_url", "api_url"]) if (locationSource[key] !== undefined) url(locationSource[key], "location source URL");
@@ -222,6 +230,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   }
 
   const seenSources = new Set<string>();
+  let partialSources = 0;
   for (const entry of list(data.sources, "sources")) {
     const source = row(entry, "source result"), provider = text(source.provider, "source provider");
     check(!seenSources.has(provider), "duplicate source"); seenSources.add(provider);
@@ -233,17 +242,43 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
       check(REQUIRED.includes(provider) && source.status === "ok" && source.offerCount === officialCounts.get(provider)
         && (source.offerCount as number) > 0, "required official source count/status");
       time(source.fetchedAt, ceiling, "source fetchedAt");
+      if (authorized) {
+        const observations = list(source.sourceObservations, "authorized source observations");
+        const expected = provider === "nebius" ? ["nebius_public", "nebius_account"] : [provider];
+        check(observations.length === expected.length, "authorized source plan");
+        let count = 0, limited = false;
+        observations.forEach((entry, index) => {
+          const item = row(entry, "source observation");
+          check(item.selection === expected[index] && Number.isSafeInteger(item.returned_count)
+            && (item.returned_count as number) > 0, "authorized source selection");
+          time(item.observed_at, ceiling, "source observation time"); url(item.source_url, "observation source URL");
+          const limits = list(item.limitations, "source limitations");
+          if (item.status === "partial") {
+            check(["nebius_account", "autodl"].includes(String(item.selection)) && limits.length > 0, "partial source scope");
+            const allowed = item.selection === "autodl" ? ["market_region_country:country_not_verified"]
+              : ["documented_public_region:no_accessible_project", "other_accounts_and_contracts:outside_authorized_account_scope", "regional_compute_tariff:compute_tariff_unavailable"];
+            for (const entry of limits) {
+              const limit = row(entry, "source limitation");
+              check(allowed.includes(`${limit.scope}:${limit.status}`), "unaccepted source limitation");
+            }
+            limited = true;
+          } else check(item.status === "success" && limits.length === 0, "authorized source completion");
+          count += item.returned_count as number;
+        });
+        check(count === source.offerCount && source.collectionStatus === (limited ? "partial" : "success"), "authorized observation counts/status");
+        if (limited) partialSources++;
+      }
     }
   }
   for (const provider of REQUIRED) check(seenSources.has(provider), `missing required source: ${provider}`);
   check(referenceCount === 0 || seenSources.has("reference"), "missing reference source");
 
   const coverage = row(data.coverage, "coverage"), totals = row(coverage.totals, "coverage totals");
-  check(coverage.schema_version === 1 && coverage.collection_status === "success" && coverage.scope === "returned_quotes", "coverage status");
+  check(coverage.schema_version === 1 && coverage.collection_status === (partialSources ? "partial" : "success") && coverage.scope === "returned_quotes", "coverage status");
   const summary = row(coverage.source_summary, "coverage sources");
   const librarySourceCount = scoped ? FIVE_PROVIDERS.length : 11;
-  check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount && summary.failed_count === 0
-    && summary.unknown_count === 0 && summary.no_matches_count === 0, "coverage source success");
+  check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount - partialSources && summary.failed_count === 0
+    && summary.unknown_count === partialSources && summary.no_matches_count === 0, "coverage source success");
   check(totals.returned_quotes === libraryIndices.size && totals.considered_quotes === libraryIndices.size
     && totals.excluded_quotes === 0 && list(coverage.excluded_quote_indices, "excluded quote indices").length === 0, "coverage quote counts");
   const covered = new Set<number>();

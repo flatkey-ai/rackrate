@@ -11,6 +11,7 @@ test("one verified post-10:30 Shanghai collection prevents scheduled/manual dupl
   assert.equal(collectionIsDue(snapshot("2026-10-20T02:30:00Z"),now),false);
   assert.equal(collectionIsDue(snapshot("2026-10-20T02:29:59Z"),now),true);
   assert.equal(collectionIsDue(snapshot("2026-10-19T03:00:00Z"),now),true);
+  assert.equal(collectionIsDue({ ...snapshot("2026-10-20T02:30:00Z"), assembly: { method: "recorded-source-replay" } }, now), true);
 });
 test("failed, future or incomplete snapshots never suppress a fresh collection",()=>{
   const now=new Date("2026-10-20T02:45:00Z");
@@ -30,4 +31,16 @@ test("force refresh only bypasses daily deduplication for explicit manual runs",
   assert.equal(shouldCollectPrices(complete, { ...options, eventName: "schedule", forceRefresh: true }), false);
   assert.equal(shouldCollectPrices(complete, { ...options, eventName: "push", forceRefresh: true }), false);
   assert.equal(shouldCollectPrices(complete, { ...options, ref: "refs/heads/codex/test", eventName: "workflow_dispatch" }), true);
+});
+
+
+test("a public snapshot cannot suppress an authorized refresh and invalid modes fail early", () => {
+  const now = new Date("2026-10-20T02:45:00Z");
+  const data = snapshot("2026-10-20T02:40:00Z");
+  assert.equal(collectionIsDue(data, now, "authorized"), true);
+  assert.throws(() => collectionIsDue(data, now, "invalid"), /must be public or authorized/);
+  data.collection_mode = "authorized";
+  data.validation_policy = "visible-catalog-v1";
+  assert.equal(collectionIsDue(data, now, "authorized"), true); // no verified sub-source plan
+  assert.equal(collectionIsDue(data, now, "public"), true);
 });

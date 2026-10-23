@@ -113,7 +113,7 @@ export async function waitForLivePricing(expectedBytes, {
   while (now() < deadline) {
     try {
       verifyLivePricing(JSON.parse(await fetchText(statusUrl, 256 * 1024)), expected, sha256);
-      verifyPageSnapshot(await fetchText(pageUrl, 16 * 1024 * 1024), sha256);
+      verifyPageSnapshot(await fetchText(pageUrl, 64 * 1024 * 1024), sha256);
       return { generatedAt: expected.generatedAt, offerCount: expected.offers.length, rateDate: expected.fx.rateDate, sha256 };
     } catch (error) { lastError = error; }
     const remaining = deadline - now();

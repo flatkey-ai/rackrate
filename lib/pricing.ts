@@ -74,3 +74,11 @@ export function compareOffers(a: Offer, b: Offer) {
   const group = (offer: Offer) => `${offer.billingUnit}|${offer.rentalType}|${offer.priceBasis}`;
   return group(a).localeCompare(group(b)) || (a.priceUsdPerGpuUnit ?? Infinity) - (b.priceUsdPerGpuUnit ?? Infinity) || a.id.localeCompare(b.id);
 }
+
+export function sourceEvidenceLabel(offer: Pick<Offer, "dataStatus" | "accountScope" | "sourceType" | "collectionSource">): string {
+  if (offer.dataStatus === "seed") return "Dated reference / not live";
+  if (offer.sourceType === "official_quote_api" || offer.collectionSource === "nebius_account") return "Account estimate";
+  if (isAccountSpecificPrice(offer)) return "Account quote";
+  if (/^authenticated_/.test(offer.accountScope ?? "")) return "Signed-in catalog";
+  return "Public price";
+}
