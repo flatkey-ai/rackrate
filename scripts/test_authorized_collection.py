@@ -102,8 +102,8 @@ class BridgeTests(unittest.TestCase):
             calls.append((providers[0], settings.nebius_source, settings.source_policy, settings.catalog_scope))
             return result_fixture(providers[0])
         result = self.run_bridge(collect)
-        self.assertEqual(len(result["prices"]), 6)
-        self.assertEqual(len(result["provider_results"]), 5)
+        self.assertEqual(len(result["prices"]), 10)
+        self.assertEqual(len(result["provider_results"]), 9)
         self.assertEqual(calls[0], ("nebius", "public", "api_preferred", "standard"))
         self.assertEqual(calls[1][1], "catalog_api")
         self.assertEqual(result["prices"][0]["observed_at"], NOW)
@@ -124,8 +124,9 @@ class BridgeTests(unittest.TestCase):
             if settings.nebius_source == "catalog_api":
                 result["provider_results"][0].update(status="failed", error={"code": "authentication_error"})
             return result
-        with self.assertRaisesRegex(bridge.CollectionFailure, "source_incomplete"):
+        with self.assertRaisesRegex(bridge.CollectionFailure, "authentication_error") as caught:
             self.run_bridge(collect)
+        self.assertEqual(bridge.safe_diagnostic(caught.exception), {"stage": "nebius_account", "code": "authentication_error"})
         self.assertEqual(calls, ["nebius", "nebius"])
 
     def test_partial_status_preserved_only_for_explicit_visibility_limits(self):
@@ -177,6 +178,99 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(bridge.CollectionFailure, "collector_version_mismatch"):
             bridge.collect_authorized(env_fixture(), Settings=Settings, collect_prices=lambda *a, **k: self.fail("no request"),
                                       report_coverage=lambda x: x, version="old", expected_version="0.22.0")
+
+    def test_captured_runpod_public_rows_keep_api_evidence_and_cloud_tiers(self):
+        fixture = json.loads((Path(__file__).parents[1] / "lib/fixtures/runpod-catalog-2026-10-23.json").read_text())
+        def collect(providers, **kwargs):
+            result = result_fixture(providers[0])
+            if providers[0] == "runpod":
+                result["prices"] = fixture["prices"]
+                result["provider_results"][0]["returned_count"] = len(fixture["prices"])
+            return result
+        result = self.run_bridge(collect)
+        rows = [row for row in result["prices"] if row["provider"] == "runpod"]
+        self.assertEqual(len(rows), len(fixture["prices"]))
+        for row, original in zip(rows, fixture["prices"]):
+            self.assertEqual(row, {**original, "collection_source": "runpod"})
+
+    def test_runpod_regional_evidence_and_safe_exclusion_audit_survive(self):
+        fixture = json.loads((Path(__file__).parents[1] / "lib/fixtures/runpod-regional-2026-10-23.json").read_text())
+        row = fixture["prices"][0]
+        self.assertEqual(bridge.sanitize(row), row)
+        coverage = fixture["catalog_coverage"]
+        count = coverage["catalog_quote_count"] + coverage["regional_quote_count"]
+        source = {"catalog_coverage": coverage}
+        self.assertEqual(bridge.public_runpod_coverage(source, [None] * count), source)
+        with self.assertRaisesRegex(bridge.CollectionFailure, "source_coverage_mismatch"):
+            bridge.public_runpod_coverage(source, [])
+        changed = copy.deepcopy(source)
+        changed["catalog_coverage"]["queried_data_center_count"] -= 1
+        with self.assertRaisesRegex(bridge.CollectionFailure, "source_coverage_mismatch"):
+            bridge.public_runpod_coverage(changed, [None] * count)
+
+
+    def test_diagnostics_preserve_stage_but_never_arbitrary_exception_text(self):
+        from nebius_oidc import OIDCError
+        self.assertEqual(bridge.safe_diagnostic(OIDCError("oidc_identity_invalid", "oidc_github_identity")),
+                         {"stage": "oidc_github_identity", "code": "oidc_identity_invalid"})
+        self.assertEqual(bridge.safe_diagnostic(bridge.CollectionFailure("synthetic-secret"))["code"], "authorized_collection_failed")
+        self.assertEqual(bridge.safe_diagnostic(RuntimeError("synthetic-secret"))["code"], "authorized_collection_failed")
+        with self.assertRaises(bridge.CollectionFailure) as caught:
+            with bridge.diagnostic_stage("lambda"):
+                bridge.fail("source_incomplete")
+        self.assertEqual(bridge.safe_diagnostic(caught.exception), {"stage": "lambda", "code": "source_incomplete"})
+        def failed(provider, **kwargs):
+            raise RuntimeError("synthetic-secret-response-body")
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_bridge(failed)
+        self.assertEqual(bridge.safe_diagnostic(caught.exception), {"stage": "nebius_public", "code": "authorized_collection_failed"})
+
+
+    def test_explicit_public_nebius_requires_no_token_and_marks_account_excluded(self):
+        values = env_fixture()
+        values.pop("RACKRATE_NEBIUS_ACCESS_TOKEN")
+        values["RACKRATE_NEBIUS_AUTH_MODE"] = "public"
+        calls = []
+        def collect(providers, *, settings, include_coverage):
+            calls.append((providers[0], settings.nebius_source))
+            self.assertNotIn("NEBIUS_ACCESS_TOKEN", settings.captured)
+            return result_fixture(providers[0])
+        output = bridge.collect_authorized(values, Settings=Settings, collect_prices=collect,
+            report_coverage=lambda result: {"collection_status": result["status"]}, version="0.23.0", expected_version="0.23.0")
+        self.assertEqual(len(calls), 9)
+        self.assertEqual([source for provider, source in calls if provider == "nebius"], ["public"])
+        self.assertEqual(output["status"], "partial")
+        nebius = output["provider_results"][0]
+        self.assertEqual(nebius["status"], "partial")
+        self.assertEqual(nebius["source_exclusions"], [{"selection": "nebius_account", "reason": "billing_setup_required", "status": "excluded_by_configuration"}])
+        self.assertEqual(nebius["source_observations"][0]["status"], "success")
+        for key in bridge.SESSION_INPUTS:
+            missing = dict(values); missing.pop(key)
+            with self.assertRaisesRegex(bridge.CollectionFailure, "missing_required_credential"):
+                with bridge.authorized_settings(missing, Settings):
+                    self.fail("other account credentials are still mandatory")
+
+
+    def test_extension_failures_discard_partial_rows_without_hiding_core_failures(self):
+        def collect(providers, **kwargs):
+            provider = providers[0]
+            result = result_fixture(provider)
+            if provider == "azure":
+                result["provider_results"][0].update(status="partial", error={"code": "synthetic-secret-error"})
+            if provider == "digitalocean":
+                raise RuntimeError("synthetic-secret-exception")
+            if provider == "verda":
+                result["prices"][0]["resources"]["unreviewed_sensitive_field"] = "synthetic-secret"
+            return result
+        result = self.run_bridge(collect)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(len(result["prices"]), 7)
+        for source in result["provider_results"][-3:]:
+            self.assertEqual(source["status"], "failed")
+            self.assertEqual(source["returned_count"], 0)
+            self.assertEqual(source["source_observations"], [])
+            self.assertEqual(source["error"], {"code": "extension_source_failed"})
+        self.assertNotIn("synthetic-secret", json.dumps(result))
 
 
 if __name__ == "__main__":

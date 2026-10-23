@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.22.0";
-export const LIBRARY_COMMIT = "7c1722de4cf1c47e924e6d9502d6c0ab4d43393e";
+export const LIBRARY_VERSION = "0.23.0";
+export const LIBRARY_COMMIT = "6cb76c04c764ce91b8cf0f70b6c35900dbf00006";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -18,8 +18,9 @@ export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTH
   return candidates.find((candidate) => exists(candidate)) ?? "python3";
 }
 export const REQUIRED_PROVIDERS = Object.freeze([
-  "nebius", "crusoe", "lambda", "ucloud", "autodl",
+  "nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda",
 ]);
+export const EXTENSION_PROVIDERS = Object.freeze(["azure", "digitalocean", "verda"]);
 
 const PROVIDERS = {
   nebius: ["Nebius", "GPU cloud", "https://nebius.com"],
@@ -27,6 +28,10 @@ const PROVIDERS = {
   lambda: ["Lambda", "GPU cloud", "https://lambda.ai"],
   ucloud: ["UCloud", "GPU cloud", "https://www.ucloud.cn"],
   autodl: ["AutoDL", "Marketplace", "https://www.autodl.com"],
+  runpod: ["RunPod", "GPU cloud", "https://www.runpod.io"],
+  azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
+  digitalocean: ["DigitalOcean", "Cloud", "https://www.digitalocean.com"],
+  verda: ["Verda", "GPU cloud", "https://verda.com"],
 };
 
 // Settings() deliberately bypasses .env and credentials inherited by this process.
@@ -58,9 +63,9 @@ export function collectionEnvironment(mode, env = process.env) {
   const output = Object.fromEntries(allowed.filter((key) => typeof env[key] === "string").map((key) => [key, env[key]]));
   if (collectionMode(mode) === "authorized") {
     const authMode = env.RACKRATE_NEBIUS_AUTH_MODE || "token";
-    if (!["token", "oidc"].includes(authMode)) throw new Error("RACKRATE_NEBIUS_AUTH_MODE must be token or oidc");
+    if (!["token", "oidc", "public"].includes(authMode)) throw new Error("RACKRATE_NEBIUS_AUTH_MODE must be token, oidc or public");
     output.RACKRATE_NEBIUS_AUTH_MODE = authMode;
-    const required = authMode === "token" ? AUTHORIZED_SECRET_NAMES : [
+    const required = authMode === "public" ? AUTHORIZED_SECRET_NAMES.slice(0, 3) : authMode === "token" ? AUTHORIZED_SECRET_NAMES : [
       ...AUTHORIZED_SECRET_NAMES.slice(0, 3), "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
       "GITHUB_REPOSITORY", "GITHUB_REF", "RACKRATE_NEBIUS_SERVICE_ACCOUNT_ID", "RACKRATE_NEBIUS_OIDC_AUDIENCE",
     ];
@@ -72,6 +77,34 @@ export function collectionEnvironment(mode, env = process.env) {
   return output;
 }
 
+const DIAGNOSTIC_CODES = new Set([
+  "authentication_error", "configuration_error", "rate_limited", "http_error", "timeout", "network_error", "invalid_json", "invalid_response", "response_incomplete", "response_too_large", "redirect_rejected",
+    "authorized_collection_failed", "invalid_nebius_auth_mode", "missing_required_credential", "invalid_credential_file",
+  "collector_version_mismatch", "source_incomplete", "source_count_mismatch", "source_coverage_mismatch",
+  "sensitive_output_rejected", "unreviewed_publication_field", "authentication_failed", "request_failed", "parse_failed",
+  "oidc_redirect_rejected", "oidc_request_failed", "oidc_response_invalid", "oidc_configuration_missing",
+  "oidc_subject_not_allowed", "oidc_configuration_invalid", "oidc_endpoint_rejected", "oidc_identity_invalid",
+  "oidc_access_token_invalid", "oidc_exchange_failed",
+]);
+const DIAGNOSTIC_STAGES = new Set(["library", "credentials", "publication", "oidc_configuration", "oidc_github_identity",
+  "oidc_exchange", "nebius_public", "nebius_account", "lambda", "crusoe", "autodl", "ucloud", "runpod", "azure", "digitalocean", "verda"]);
+
+export function authorizedFailureDiagnostic(error) {
+  // Never interpolate arbitrary stderr/message/URL. Only an exact, bounded
+  // protocol line and two independently allowlisted constants cross this boundary.
+  const stderr = error?.stderr;
+  if (typeof stderr !== "string" || stderr.length > 512) return "library/authorized_collection_failed";
+  const match = /^RACKRATE_DIAGNOSTIC (\{[^\r\n]+\})\n?$/.exec(stderr);
+  if (!match) return "library/authorized_collection_failed";
+  try {
+    const value = JSON.parse(match[1]);
+    if (Object.keys(value).length === 2 && DIAGNOSTIC_STAGES.has(value.stage) && DIAGNOSTIC_CODES.has(value.code)) {
+      return `${value.stage}/${value.code}`;
+    }
+  } catch { /* Ignore malformed diagnostics without echoing them. */ }
+  return "library/authorized_collection_failed";
+}
+
 export async function collectAuthorizedLibrary({ python = collectionPython(), exec = execFile, env = process.env } = {}) {
   const childEnv = collectionEnvironment("authorized", env);
   let stdout;
@@ -79,9 +112,9 @@ export async function collectAuthorizedLibrary({ python = collectionPython(), ex
     ({ stdout } = await exec(python, [join(repositoryRoot, "scripts", "collect-authorized.py"), LIBRARY_VERSION], {
       encoding: "utf8", timeout: 35 * 60 * 1000, maxBuffer: 64 * 1024 * 1024, env: childEnv,
     }));
-  } catch {
+  } catch (error) {
     // child_process errors can contain stdout/stderr, command and environment.
-    throw new Error("Authorized collection failed; check credential validity or source changes. Existing data was preserved");
+    throw new Error(`Authorized collection failed [${authorizedFailureDiagnostic(error)}]. Existing data was preserved`);
   }
   let result;
   try { result = JSON.parse(stdout); }
@@ -139,7 +172,7 @@ function strings(value, label) {
 
 const AUTHORIZED_PLAN = {
   nebius: ["nebius_public", "nebius_account"], crusoe: ["crusoe"],
-  lambda: ["lambda"], ucloud: ["ucloud"], autodl: ["autodl"],
+  lambda: ["lambda"], ucloud: ["ucloud"], autodl: ["autodl"], runpod: ["runpod"], azure: ["azure"], digitalocean: ["digitalocean"], verda: ["verda"],
 };
 const SAFE_NEBIUS_LIMITS = new Set([
   "documented_public_region:no_accessible_project",
@@ -148,10 +181,20 @@ const SAFE_NEBIUS_LIMITS = new Set([
 ]);
 
 export function authorizedSourceVerified(source) {
-  const expected = AUTHORIZED_PLAN[source?.provider];
+  if (EXTENSION_PROVIDERS.includes(source?.provider) && source.status === "failed") {
+    return source.returned_count === 0 && source.error?.code === "extension_source_failed"
+      && Object.keys(source.error).length === 1 && Array.isArray(source.source_observations) && source.source_observations.length === 0
+      && Array.isArray(source.source_exclusions) && source.source_exclusions.length === 0;
+  }
+  const exclusions = source?.source_exclusions ?? [];
+  const publicNebius = source?.provider === "nebius" && Array.isArray(exclusions) && exclusions.length === 1 && exclusions[0] && typeof exclusions[0] === "object"
+    && Object.keys(exclusions[0]).length === 3 && exclusions[0].selection === "nebius_account"
+    && exclusions[0].reason === "billing_setup_required" && exclusions[0].status === "excluded_by_configuration";
+  if (!Array.isArray(exclusions) || (exclusions.length && !publicNebius)) return false;
+  const expected = publicNebius ? ["nebius_public"] : AUTHORIZED_PLAN[source?.provider];
   const observations = source?.source_observations;
   if (!expected || !Array.isArray(observations) || observations.length !== expected.length || source.error) return false;
-  let count = 0, partial = false;
+  let count = 0, partial = publicNebius;
   for (let index = 0; index < expected.length; index++) {
     const item = observations[index];
     if (item.selection !== expected[index] || !Number.isSafeInteger(item.returned_count) || item.returned_count < 1
@@ -189,7 +232,7 @@ export function validatePublicResult(result) {
     if (sources.has(source.provider) || !REQUIRED_PROVIDERS.includes(source.provider)) {
       throw new Error(`Unexpected or duplicate source: ${source.provider}`);
     }
-    if ((authorized ? !authorizedSourceVerified(source) : source.status !== "success" || source.error) || source.returned_count < 1) {
+    if ((authorized ? !authorizedSourceVerified(source) : source.status !== "success" || source.error) || (source.returned_count < 1 && !(authorized && EXTENSION_PROVIDERS.includes(source.provider) && source.status === "failed"))) {
       throw new Error(`Required public source failed: ${source.provider}`);
     }
     timestamp(source.observed_at, `${source.provider} timestamp`);
@@ -200,7 +243,7 @@ export function validatePublicResult(result) {
     const count = result.prices.filter((quote) => quote.provider === provider).length;
     if (count !== sources.get(provider).returned_count) throw new Error(`Source count mismatch: ${provider}`);
   }
-  if (authorized && result.status !== (result.provider_results.some((source) => source.status === "partial") ? "partial" : "success")) {
+  if (authorized && result.status !== (result.provider_results.some((source) => source.status !== "success") ? "partial" : "success")) {
     throw new Error("Authorized collection status does not match its source observations");
   }
   const coverage = result.coverage;
@@ -345,6 +388,7 @@ export function normalizeLibraryResult(result) {
       ...(Number.isFinite(resources.ram_gb) ? { ramGb: resources.ram_gb } : {}),
       resources,
       sourceAmount: quote.amount, pricePerGpuUnit: amount,
+      exactApiHourlyAmount: quote.exact_api_hourly_amount ?? null, priceSource: quote.price_source ?? null,
       pricePerGpuHour: quote.currency === "USD" && billingUnit === "GPU-hour" ? amount : null,
       sourceCurrency: quote.currency, billingUnit,
       instancePrice, instanceSourceAmount: instance?.amount ?? null,
@@ -364,6 +408,7 @@ export function normalizeLibraryResult(result) {
       applicableRegions: quote.applicable_regions ?? [], applicableCountries: quote.applicable_countries ?? [],
       priceApplicability: quote.price_applicability ?? null, capacityLocations: quote.capacity_locations ?? [],
       collectionSource: quote.collection_source ?? null, visibleSource: quote.visible_source ?? null,
+      sourcePartition: quote.source_partition ?? null,
       pricingProductScope: quote.pricing_product_scope ?? null, billingMeter: quote.billing_meter ?? null,
       region: regions.length ? regions.join(", ") : "Not published", regions, zones,
       geographicScope: quote.geographic_scope ?? "unspecified", regionScope: quote.geographic_scope ?? "unspecified",
@@ -371,6 +416,7 @@ export function normalizeLibraryResult(result) {
       priceScope: quote.price_scope ?? null, locationSource: quote.location_source ?? null,
       availability, sourceAvailability: rawAvailability,
       egress: "Not published", sourceUrl: quote.source_url,
+      apiSourceUrl: quote.api_source_url ?? null, priceBasisSourceUrl: quote.price_basis_source_url ?? null,
       sourceType: quote.source_type, observedAt: timestamp(quote.observed_at, "quote timestamp"),
       effectiveFrom: quote.effective_from ?? null, effectiveUntil: quote.effective_until ?? null,
       accountScope: quote.account_scope ?? "unspecified", taxScope: quote.tax_scope ?? "unspecified",
@@ -386,7 +432,7 @@ export function normalizeLibraryResult(result) {
       providers: REQUIRED_PROVIDERS.map((slug) => {
         const [name, type, website] = PROVIDERS[slug];
         return { slug, name, type, hq: null, billing: "As published", website,
-          summary: "Official public rental prices collected by gpu-price-monitor. Check individual records for region, billing and availability conditions." };
+          summary: "Official public and selected signed-in prices collected by gpu-price-monitor. Check individual records for region, billing and availability conditions." };
       }),
     },
   };
@@ -428,7 +474,7 @@ export function validateOffers(offers, { requireUsd = false, rates } = {}) {
 
 export function buildRackRateDataset(_current, libraryResult) {
   const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
-  // Only this collection's five source results define the current dataset.
+  // Only this collection's nine source results define the current dataset.
   // Earlier references remain in dated history; they are never re-observed.
   const offers = publicOffers.sort((a, b) => a.id.localeCompare(b.id));
   validateOffers(offers);
@@ -440,7 +486,7 @@ export function buildRackRateDataset(_current, libraryResult) {
     generatedCatalog, coverage: libraryResult.coverage,
     sources: [
       ...libraryResult.provider_results.map((source) => ({ provider: source.provider, url: source.source_url,
-        status: "ok", collectionStatus: source.status, sourceObservations: source.source_observations ?? null, fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
+        status: source.status === "failed" ? "failed" : "ok", failureCode: source.status === "failed" ? "extension_source_failed" : null, collectionStatus: source.status, sourceObservations: source.source_observations ?? null, sourceExclusions: source.source_exclusions ?? [], fetchedAt: source.observed_at, offerCount: source.returned_count, sourceType: source.source_type })),
     ],
     offers,
   };

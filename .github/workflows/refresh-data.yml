@@ -33,6 +33,7 @@ jobs:
     env:
       # Missing variable preserves the credential-free public collection mode.
       RACKRATE_COLLECTION_MODE: ${{ vars.RACKRATE_COLLECTION_MODE || 'public' }}
+      RACKRATE_NEBIUS_AUTH_MODE: ${{ vars.RACKRATE_NEBIUS_AUTH_MODE || 'token' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -67,7 +68,7 @@ jobs:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
         if: steps.due.outputs.collect == 'true'
-      - name: Collect the five tracked providers' public GPU prices
+      - name: Collect the nine tracked providers' public GPU prices
         if: steps.due.outputs.collect == 'true' && env.RACKRATE_COLLECTION_MODE == 'public'
         run: bun run data:refresh
       - name: Collect public and authorized visible GPU prices
@@ -76,7 +77,6 @@ jobs:
           RACKRATE_LAMBDA_STORAGE_STATE_JSON: ${{ secrets.RACKRATE_LAMBDA_STORAGE_STATE_JSON }}
           RACKRATE_AUTODL_STORAGE_STATE_JSON: ${{ secrets.RACKRATE_AUTODL_STORAGE_STATE_JSON }}
           RACKRATE_UCLOUD_CONSOLE_SESSION_JSON: ${{ secrets.RACKRATE_UCLOUD_CONSOLE_SESSION_JSON }}
-          RACKRATE_NEBIUS_AUTH_MODE: ${{ vars.RACKRATE_NEBIUS_AUTH_MODE || 'token' }}
           RACKRATE_NEBIUS_ACCESS_TOKEN: ${{ secrets.RACKRATE_NEBIUS_ACCESS_TOKEN }}
           RACKRATE_NEBIUS_SERVICE_ACCOUNT_ID: ${{ vars.RACKRATE_NEBIUS_SERVICE_ACCOUNT_ID }}
           RACKRATE_NEBIUS_OIDC_AUDIENCE: ${{ vars.RACKRATE_NEBIUS_OIDC_AUDIENCE }}

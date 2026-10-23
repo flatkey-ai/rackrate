@@ -77,5 +77,17 @@ class OIDCTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), "oidc_exchange_failed")
 
 
+    def test_failure_stage_distinguishes_github_identity_from_nebius_exchange(self):
+        for failing_url, stage in [(None, "oidc_github_identity"), (EXCHANGE_URL, "oidc_exchange")]:
+            def request(url, **kwargs):
+                if failing_url is None or url == failing_url:
+                    raise OIDCError("oidc_request_failed")
+                return {"value": identity()}
+            with self.assertRaises(OIDCError) as caught:
+                exchange_nebius_token(environment(), request=request, now=NOW)
+            self.assertEqual(caught.exception.stage, stage)
+            self.assertEqual(str(caught.exception), "oidc_request_failed")
+
+
 if __name__ == "__main__":
     unittest.main()

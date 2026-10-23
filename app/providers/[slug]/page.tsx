@@ -28,13 +28,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ProviderPage({ params }: PageProps) {
   const snapshot = await getPricingSnapshot();
-  const { getOffersForProvider, getProvider, providers } = snapshot;
+  const { getOffersForProvider, getAuditOffersForProvider, getProviderSourceNotice, getProvider, providers } = snapshot;
   const explorerData = { offers: snapshot.offers, gpus: snapshot.gpus, providers: snapshot.providers, generatedAt: snapshot.generatedAt, sources: snapshot.sources };
 
   const provider = getProvider((await params).slug);
   if (!provider) notFound();
   if (provider.slug === "flatkey") return <FlatkeyProfile />;
   const listings = getOffersForProvider(provider.slug);
+  const auditListings = getAuditOffersForProvider(provider.slug);
+  const sourceNotice = getProviderSourceNotice(provider.slug);
   const gpuCount = new Set(listings.map((offer) => offer.gpuSlug)).size;
   const regions = new Set(listings.map((offer) => offer.region)).size;
   const floor = cheapestComparableOffer(listings);
@@ -60,8 +62,10 @@ export default async function ProviderPage({ params }: PageProps) {
       </section>
 
       <section className="detail-content shell">
-        <div className="detail-section-heading"><div><span className="eyebrow">Sourced catalogue</span><h2>Indexed GPU configurations</h2></div><p>Prices display in USD with original amounts and dated exchange rates attached. Monthly periods remain separate. Show every record to include offline prices.</p></div>
-        <PriceExplorer {...explorerData} providerSlug={provider.slug} />
+        {sourceNotice && <p>{sourceNotice}</p>}
+        <div className="detail-section-heading"><div><span className="eyebrow">Verified regional prices</span><h2>Hourly GPU configurations</h2></div><p>Fixed hourly prices with verified countries and regions. Shared catalog prices are included only where their listed regions are verified.</p></div>
+        {listings.length ? <PriceExplorer {...explorerData} providerSlug={provider.slug} /> : <p>No verified regional fixed rates are available for comparison yet.</p>}
+        {auditListings.length > 0 && <section className="directory-intro" aria-label="Source catalog audit"><div><span className="eyebrow">Source catalog</span><h2>{auditListings.length} records kept for audit</h2></div><p>These records have unconfirmed quote geography, starting prices, non-hourly billing or require a sales quote. They are excluded from formal price comparisons. <a href={auditListings[0].sourceUrl} target="_blank" rel="noreferrer">View the original source ↗</a> · <a href="https://raw.githubusercontent.com/flatkey-ai/rackrate/main/data/public-prices.json" target="_blank" rel="noreferrer">All source records (JSON) ↗</a></p></section>}
         <div className="detail-next-links"><Link href="/guides/gpu-rental-pricing"><span>Pricing guide</span><strong>Evaluate the full cost per GPU-hour →</strong></Link><Link href="/providers"><span>Provider directory</span><strong>Compare other GPU clouds →</strong></Link></div>
       </section>
       <SnapshotFooter offers={snapshot.offers} generatedAt={snapshot.generatedAt} publication={snapshot.publication} />

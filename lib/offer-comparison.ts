@@ -1,6 +1,7 @@
 import type { Offer } from "./data";
 import { hasVerifiedPriceLocation, publishedRegionCodes } from "./region-matching.ts";
 import { isAccountSpecificPrice } from "./pricing.ts";
+import { preferMemberOffers } from "./member-preference.ts";
 
 export type OfferAudience = "regular" | "member" | "conditional";
 
@@ -164,11 +165,11 @@ function compareBuckets(a: OfferComparisonBucket, b: OfferComparisonBucket): num
 
 /** Canonical model groups, then compatible configuration buckets, then USD ASC.
  * Lowest badges are scoped to a bucket and audience, never across configurations.
- * Input offers are retained (including dated/offline records) and never mutated.
+ * Exact ordinary/member pairs prefer the member row; source inputs are not mutated.
  */
 export function groupOffersForComparison(input: readonly Offer[], { requireRegionalPrice = false } = {}): OfferComparisonGroup[] {
   const groups = new Map<string, Map<string, OfferComparisonBucket>>();
-  for (const offer of input) {
+  for (const offer of preferMemberOffers(input)) {
     let buckets = groups.get(offer.gpuSlug);
     if (!buckets) groups.set(offer.gpuSlug, buckets = new Map());
     const key = comparisonBucketKey(offer);

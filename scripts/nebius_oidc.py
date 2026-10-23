@@ -20,7 +20,9 @@ OIDC_ENV = ("ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "G
 
 
 class OIDCError(Exception):
-    pass
+    def __init__(self, code, stage="oidc_configuration"):
+        super().__init__(code)
+        self.stage = stage
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -43,12 +45,15 @@ def request_json(url, *, headers, data=None):
         if not isinstance(value, dict):
             raise OIDCError("oidc_response_invalid")
         return value
+    except OIDCError:
+        raise
     except Exception:
         # Neither request bodies/headers nor server error text leave this helper.
         raise OIDCError("oidc_request_failed") from None
 
 
 def exchange_nebius_token(env, *, request=request_json, now=None):
+    stage = "oidc_configuration"
     try:
         if any(not isinstance(env.get(key), str) or not env[key].strip() for key in OIDC_ENV):
             raise OIDCError("oidc_configuration_missing")
@@ -65,6 +70,7 @@ def exchange_nebius_token(env, *, request=request_json, now=None):
         query = [(key, value) for key, value in parse_qsl(url.query, keep_blank_values=True) if key != "audience"]
         query.append(("audience", audience))
         github_url = urlunsplit((url.scheme, url.netloc, url.path, urlencode(query), ""))
+        stage = "oidc_github_identity"
         identity = request(github_url, headers={"Authorization": "Bearer " + env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"], "Accept": "application/json"})
         jwt = identity.get("value")
         if not isinstance(jwt, str) or not re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", jwt) or len(jwt) > 65536:
@@ -88,6 +94,7 @@ def exchange_nebius_token(env, *, request=request_json, now=None):
             "actor_token": jwt,
             "actor_token_type": "urn:ietf:params:oauth:token-type:jwt",
         }).encode("ascii")
+        stage = "oidc_exchange"
         exchanged = request(EXCHANGE_URL, headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}, data=data)
         token = exchanged.get("access_token")
         if (exchanged.get("token_type", "").casefold() != "bearer"
@@ -96,7 +103,8 @@ def exchange_nebius_token(env, *, request=request_json, now=None):
                 or not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~+/-]+={0,2}", token) or len(token) > 16384):
             raise OIDCError("oidc_access_token_invalid")
         return token
-    except OIDCError:
+    except OIDCError as error:
+        error.stage = stage
         raise
     except Exception:
-        raise OIDCError("oidc_exchange_failed") from None
+        raise OIDCError("oidc_exchange_failed", stage) from None

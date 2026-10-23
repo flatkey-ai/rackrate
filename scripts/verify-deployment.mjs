@@ -38,7 +38,7 @@ export function verifyLivePricing(actual, expected, expectedSha256) {
     contactSalesOffers: expected.offers.filter((quote) => quote.quoteStatus === "contact_sales").length,
   };
   for (const [key, value] of Object.entries(expectedCounts)) {
-    if (actual.counts?.[key] !== value) throw new Error(`Live ${key} count does not match`);
+    if ((actual.sourceCounts ?? actual.counts)?.[key] !== value) throw new Error(`Live ${key} count does not match`);
   }
   const sources = expected.sources.filter((source) => source.status === "ok");
   const liveSources = actual.sources?.filter((source) => source.status === "ok");
@@ -49,6 +49,12 @@ export function verifyLivePricing(actual, expected, expectedSha256) {
   for (const source of sources) {
     if (!liveSources.some((live) => live.provider === source.provider && live.offerCount === source.offerCount)) {
       throw new Error(`Live ${source.provider} source was not verified`);
+    }
+  }
+  for (const failed of expected.sources.filter(source => source.status === "failed")) {
+    if (!actual.sources?.some(source => source.provider === failed.provider && source.status === "failed"
+        && source.offerCount === 0 && source.failureCode === "extension_source_failed")) {
+      throw new Error("Live extension failure disclosure does not match");
     }
   }
   return true;

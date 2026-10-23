@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   buildRackRateDataset, collectPublicLibrary, collectionPython, LIBRARY_VERSION, normalizeLibraryResult,
   PYTHON_COLLECTION_CODE, REQUIRED_PROVIDERS, validatePublicResult,
-  validateOffers, collectAuthorizedLibrary, collectionMode, collectionEnvironment, AUTHORIZED_SECRET_NAMES,
+  validateOffers, authorizedSourceVerified, authorizedFailureDiagnostic, collectAuthorizedLibrary, collectionMode, collectionEnvironment, AUTHORIZED_SECRET_NAMES,
 } from "./lib/library.mjs";
 import { refreshPrices } from "./refresh-prices.mjs";
 import { convertDatasetToUsd, parseEcbRates } from "./lib/fx.mjs";
@@ -36,8 +37,34 @@ function fixture(additional = []) {
     },
   };
 }
-test("the scheduled collector requires exactly the five selected competitors", () => {
-  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl"]);
+test("the scheduled collector requires exactly the nine selected sources", () => {
+  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda"]);
+});
+
+test("captured RunPod Secure/Community rates retain exact source prices, variants and unknown location", () => {
+  const recorded = JSON.parse(readFileSync(new URL("../lib/fixtures/runpod-catalog-2026-10-23.json", import.meta.url), "utf8"));
+  const result = fixture(recorded.prices);
+  result.coverage.models = [];
+  for (const [index, row] of result.prices.entries()) {
+    let model = result.coverage.models.find(entry => entry.gpu_model === row.gpu_model);
+    if (!model) result.coverage.models.push(model = { gpu_model: row.gpu_model, quote_indices: [] });
+    model.quote_indices.push(index);
+  }
+  const { offers } = normalizeLibraryResult(result);
+  for (const row of recorded.prices) {
+    const normalized = offers.find(q => q.rawSku === row.raw_sku && q.cloudTier === row.cloud_tier);
+    assert.equal(normalized.sourceAmount, row.amount);
+    assert.equal(normalized.apiSourceUrl, "https://api.runpod.io/graphql");
+    assert.equal(normalized.priceBasisSourceUrl, row.price_basis_source_url);
+    assert.equal(normalized.gpuVariant, row.gpu_variant);
+    assert.equal(normalized.billingUnit, "GPU-hour");
+    assert.deepEqual(normalized.regions, []);
+    assert.equal(normalized.countryCode, "");
+    assert.equal(normalized.membershipRequired, null);
+    assert.ok(normalized.conditions.includes(`Cloud tier: ${row.cloud_tier}`));
+  }
+  result.provider_results = result.provider_results.filter(q => q.provider !== "runpod");
+  assert.throws(() => normalizeLibraryResult(result), /Missing required public source: runpod/);
 });
 
 test("native currency, period, explicit geography and unavailable status survive ingestion", () => {
@@ -208,7 +235,7 @@ test("Python selection prefers explicit path then clone-local venv over global P
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: () => false }), "python3");
 });
 
-test("current dataset contains only this five-provider collection and never reobserves old offers", () => {
+test("current dataset contains only this nine-provider collection and never reobserves old offers", () => {
   const references = ["vast-ai", "aws", "hyperstack", "runpod", "flatkey"].map((providerSlug) => ({
     id: `dated-${providerSlug}`, providerSlug, dataStatus: "seed", observedAt: "2020-01-01T00:00:00Z",
   }));
@@ -216,7 +243,7 @@ test("current dataset contains only this five-provider collection and never reob
   const before = JSON.stringify(current);
   const output = buildRackRateDataset(current, fixture());
   assert.equal(output.schemaVersion, 2);
-  assert.equal(output.offers.length, 5);
+  assert.equal(output.offers.length, 9);
   assert.ok(output.offers.every((offer) => REQUIRED_PROVIDERS.includes(offer.providerSlug) && offer.dataStatus === "official-page"));
   assert.ok(!output.offers.some((offer) => offer.id === "obsolete"));
   assert.deepEqual(output.sources.map((source) => source.provider).sort(), [...REQUIRED_PROVIDERS].sort());
@@ -401,11 +428,62 @@ test("public and account observations, configurations and reserved terms remain 
   Object.assign(result.prices[2], { visible_source: "public", applicable_regions: ["us-test"], applicable_countries: ["US"],
     price_scope: "unlocated_catalog", price_applicability: { scope: "currently_selectable_standard_regions" } });
   const output = normalizeLibraryResult(result);
-  assert.equal(output.offers.length, 7);
-  assert.equal(new Set(output.offers.map((offer) => offer.id)).size, 7);
+  assert.equal(output.offers.length, 11);
+  assert.equal(new Set(output.offers.map((offer) => offer.id)).size, 11);
   assert.deepEqual(output.offers[2].regions, []);
   assert.deepEqual(output.offers[2].computeCountries, []);
   assert.deepEqual(output.offers[2].applicableRegions, ["us-test"]);
-  assert.equal(output.offers[5].sourceConditions.duration, "1-week");
-  assert.equal(output.offers[6].sourceConditions.duration, "4-weeks");
+  assert.equal(output.offers[9].sourceConditions.duration, "1-week");
+  assert.equal(output.offers[10].sourceConditions.duration, "4-weeks");
+});
+
+
+test("authorized child diagnostics expose only reviewed stage/code constants", async () => {
+  const valid = { stderr: 'RACKRATE_DIAGNOSTIC {"stage":"oidc_exchange","code":"oidc_request_failed"}\n' };
+  assert.equal(authorizedFailureDiagnostic(valid), "oidc_exchange/oidc_request_failed");
+  for (const stderr of [
+    'synthetic-secret\n' + valid.stderr,
+    'RACKRATE_DIAGNOSTIC {"stage":"synthetic-secret","code":"oidc_request_failed"}',
+    'RACKRATE_DIAGNOSTIC {"stage":"oidc_exchange","code":"synthetic-secret"}',
+    'RACKRATE_DIAGNOSTIC {"stage":"oidc_exchange","code":"oidc_request_failed","token":"synthetic-secret"}',
+    valid.stderr + 'synthetic-secret', 'x'.repeat(513), 'RACKRATE_DIAGNOSTIC invalid',
+  ]) assert.equal(authorizedFailureDiagnostic({ stderr }), "library/authorized_collection_failed");
+  const env = Object.fromEntries(AUTHORIZED_SECRET_NAMES.map(name => [name, "synthetic-secret"]));
+  await assert.rejects(collectAuthorizedLibrary({ env, exec: async () => { throw valid; } }),
+    /oidc_exchange\/oidc_request_failed/);
+});
+
+
+test("explicit public-only Nebius profile preserves account exclusion without silently weakening other sources", () => {
+  const env = { ...Object.fromEntries(AUTHORIZED_SECRET_NAMES.slice(0, 3).map(name => [name, "synthetic-secret"])), RACKRATE_NEBIUS_AUTH_MODE: "public" };
+  const child = collectionEnvironment("authorized", env);
+  assert.equal(child.RACKRATE_NEBIUS_AUTH_MODE, "public");
+  assert.equal(child.RACKRATE_NEBIUS_ACCESS_TOKEN, undefined);
+  assert.equal(child.ACTIONS_ID_TOKEN_REQUEST_TOKEN, undefined);
+  const source = { ...authorizedFixture().provider_results[0], status: "partial", returned_count: 1,
+    source_observations: [authorizedFixture().provider_results[0].source_observations[0]],
+    source_exclusions: [{ selection: "nebius_account", reason: "billing_setup_required", status: "excluded_by_configuration" }] };
+  assert.equal(authorizedSourceVerified(source), true);
+  for (const changed of [ { ...source, status: "success" }, { ...source, source_exclusions: [] },
+    { ...source, source_exclusions: [null] }, { ...source, provider: "lambda" },
+    { ...source, source_exclusions: [{ ...source.source_exclusions[0], reason: "authentication_failed" }] }]) {
+    assert.equal(authorizedSourceVerified(changed), false);
+  }
+});
+
+
+test("an explicitly failed expansion source is retained as failed with no stale quotes", () => {
+  const result = authorizedFixture();
+  result.prices = result.prices.filter(q => q.provider !== "azure");
+  result.coverage.models[0].quote_indices = result.prices.map((_, i) => i);
+  const source = result.provider_results.find(source => source.provider === "azure");
+  Object.assign(source, { status: "failed", returned_count: 0, error: { code: "extension_source_failed" }, source_observations: [], source_exclusions: [] });
+  result.status = result.coverage.collection_status = "partial";
+  assert.equal(validatePublicResult(result), result);
+  const output = buildRackRateDataset({}, result);
+  assert.equal(output.sources.find(source => source.provider === "azure").status, "failed");
+  assert.equal(output.sources.find(source => source.provider === "azure").failureCode, "extension_source_failed");
+  assert.equal(output.offers.filter(q => q.providerSlug === "azure").length, 0);
+  for (const changed of [{ ...source, provider: "lambda" }, { ...source, returned_count: 1 },
+    { ...source, error: { code: "synthetic-secret" } }]) assert.equal(authorizedSourceVerified(changed), false);
 });

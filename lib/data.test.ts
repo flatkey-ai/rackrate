@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createPricingData, prioritizeGpuCatalog, type Offer, type PricingDataset } from "./data.ts";
 
 const quote = (overrides: Partial<Offer> = {}): Offer => ({
   id: "public-example-hourly", gpuSlug: "nvidia-h100", providerSlug: "nebius", gpuCount: null, gpuVariant: "PCIe", vramGb: 80,
-  pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "Not published", regions: [], zones: [], countryCode: "",
+  pricePerGpuUnit: 2, priceUsdPerGpuUnit: 2, pricePerGpuHour: 2, rentalType: "On-demand", region: "us-central1", regions: ["us-central1"], zones: [], countryCode: "US", priceScope: "regional_quote",
   availability: "unknown", egress: "Not published", sourceUrl: "https://example.com/prices", observedAt: "2026-10-20T08:00:00Z",
   sourceCurrency: "USD", billingUnit: "GPU-hour", quoteStatus: "quoted", priceBasis: "advertised_per_gpu", conditions: [], dataStatus: "official-page", ...overrides,
 });
@@ -50,7 +51,7 @@ test("catalog projection follows each snapshot without retaining a prior catalog
 });
 
 test("the current board excludes other collectors and dated references while keeping the commercial CTA profile", () => {
-  const excluded = ["aws", "vast-ai", "hyperstack", "runpod", "azure", "digitalocean", "flatkey"];
+  const excluded = ["aws", "vast-ai", "hyperstack", "runpod", "flatkey"];
   const input = dataset({ offers: [quote(), ...excluded.map((providerSlug) => quote({ id: providerSlug, providerSlug })),
     quote({ id: "dated-nebius", providerSlug: "nebius", dataStatus: "seed" })],
     sources: [{ provider: "nebius", status: "ok" }, ...excluded.map((provider) => ({ provider, status: "reference" }))],
@@ -66,14 +67,74 @@ test("the current board excludes other collectors and dated references while kee
   assert.deepEqual(current.getOffersForProvider("flatkey"), []);
   assert.equal(JSON.stringify(input), before);
 });
-test("status and filters use the same original-currency monthly snapshot", () => {
+
+test("only reviewed RunPod API observations enter the board, with cloud tiers and unknown regions intact", () => {
+  const secure = quote({ id: "secure", providerSlug: "runpod", sourceUrl: "https://www.runpod.io/pricing",
+    apiSourceUrl: "https://api.runpod.io/graphql", sourceType: "official_public_api", accountScope: "public_catalog",
+    cloudTier: "secure", billingMode: "on_demand", geographicScope: "unspecified", priceScope: "unlocated_catalog", region: "Not published", regions: [], countryCode: "" });
+  const community = { ...secure, id: "community", cloudTier: "community" };
+  const legacy = { ...secure, id: "legacy", sourceType: "public_page", region: "Global", apiSourceUrl: null };
+  const inventedLocation = { ...secure, id: "invented", regions: ["us-west"], countryCode: "US" };
+  const current = createPricingData(dataset({ offers: [secure, community, legacy, inventedLocation],
+    sources: [{ provider: "runpod", status: "ok" }] }));
+  assert.deepEqual(current.offers, []);
+  assert.deepEqual(current.getAuditOffersForProvider("runpod").map(q => q.id), ["secure", "community"]);
+  assert.equal(current.getProvider("runpod")?.name, "RunPod");
+  assert.equal(current.getOffersForRegion("united-states").length, 0);
+  assert.equal(current.getOffersForRegion("global").length, 0);
+  assert.ok(current.getAuditOffersForProvider("runpod").every(q => q.membershipRequired !== true));
+});
+test("monthly prices remain in the source audit, outside the hourly comparison", () => {
   const monthly = quote({ id: "monthly", sourceCurrency: "CNY", billingUnit: "GPU-month", pricePerGpuUnit: 100, priceUsdPerGpuUnit: 15, pricePerGpuHour: null, availability: "unavailable", rentalType: "Monthly", regions: ["United States", "Finland"], region: "United States, Finland" });
   const data = createPricingData(dataset({ offers: [monthly] }));
-  assert.equal(data.offers[0].pricePerGpuUnit, 100);
-  assert.equal(data.offers[0].priceUsdPerGpuUnit, 15);
-  assert.equal(data.offers[0].pricePerGpuHour, null);
+  assert.equal(data.getAuditOffersForProvider("nebius")[0].pricePerGpuUnit, 100);
+  assert.equal(data.getAuditOffersForProvider("nebius")[0].priceUsdPerGpuUnit, 15);
+  assert.equal(data.getAuditOffersForProvider("nebius")[0].pricePerGpuHour, null);
   assert.equal(data.getCheapestOffer(), undefined);
-  assert.equal(data.pricingDatasetStatus.counts.offlineOffers, 1);
-  assert.deepEqual(data.getOffersForRegion("united-states").map((offer) => offer.id), ["monthly"]);
-  assert.deepEqual(data.getOffersForRegion("europe").map((offer) => offer.id), ["monthly"]);
+  assert.equal(data.pricingDatasetStatus.counts.auditOnlyRecords, 1);
+  assert.deepEqual(data.getOffersForRegion("united-states"), []);
+  assert.deepEqual(data.getOffersForRegion("europe"), []);
+});
+
+
+test("all providers use the same hourly/geography gate, while verified Lambda shared regions remain eligible", () => {
+  const lambda = quote({ ...JSON.parse(readFileSync(new URL("./fixtures/lambda-shared-catalog-2026-10-23.json", import.meta.url), "utf8")), id: "shared-lambda" });
+  const excluded = ["nebius", "lambda", "crusoe"].map(providerSlug => quote({ id: providerSlug + "-unlocated", providerSlug,
+    region: "Not published", regions: [], countryCode: "", priceScope: "unlocated_catalog" }));
+  excluded.push(quote({ id: "coverage", priceScope: "platform_coverage" }),
+    quote({ id: "regional-floor", quoteStatus: "starting_at", priceBasis: "starting_price" }),
+    quote({ id: "component", priceBasis: "gpu_component_only" }),
+    quote({ id: "unknown-country", providerSlug: "autodl", region: "Private region", regions: ["Private region"], countryCode: "" }));
+  const input = dataset({ offers: [quote(), lambda, ...excluded] });
+  const original = JSON.stringify(input);
+  const data = createPricingData(input);
+  assert.deepEqual(data.offers.map(q => q.id), ["public-example-hourly", "shared-lambda"]);
+  assert.equal(data.pricingDatasetStatus.counts.sourceRecords, 9);
+  assert.equal(data.pricingDatasetStatus.counts.auditOnlyRecords, 7);
+  assert.ok(data.getOffersForRegion("india").some(q => q.id === "shared-lambda"));
+  assert.equal(JSON.stringify(input), original);
+});
+
+
+test("explicit Nebius account exclusion is disclosed instead of implying signed-in account coverage", () => {
+  const data = createPricingData(dataset({ sources: [{ provider: "nebius", status: "ok", sourceExclusions: [
+    { selection: "nebius_account", reason: "billing_setup_required", status: "excluded_by_configuration" },
+  ] }] }));
+  assert.match(data.getProviderSourceNotice("nebius"), /Public sources only/);
+  assert.equal(data.getProviderSourceNotice("lambda"), "");
+  assert.equal(data.pricingDatasetStatus.sources[0].sourceExclusions.length, 1);
+});
+
+
+test("older five-source snapshots do not imply that newly configured sources were collected", () => {
+  const providers = ["nebius", "lambda", "crusoe", "ucloud", "autodl"];
+  const old = dataset({ offers: providers.map(providerSlug => quote({ id: providerSlug, providerSlug })),
+    sources: providers.map(provider => ({ provider, status: "ok", offerCount: 1 })),
+    generatedCatalog: { gpus: dataset().generatedCatalog!.gpus, providers: providers.map(slug => ({ slug, name: slug, website: `https://${slug}.example` })) } });
+  const data = createPricingData(old);
+  assert.deepEqual(data.providers.map(p => p.slug).sort(), [...providers].sort());
+  assert.equal(data.sources.length, 5);
+  assert.equal(data.pricingDatasetStatus.sourceCounts.offers, 5);
+  for (const slug of ["runpod", "azure", "digitalocean", "verda"]) assert.equal(data.getProvider(slug), undefined);
+  assert.equal(data.generatedAt, old.generatedAt);
 });

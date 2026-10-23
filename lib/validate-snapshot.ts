@@ -1,7 +1,10 @@
 import type { Offer, PricingDataset } from "./data";
 import { sharedCatalogLocations } from "./catalog-applicability.ts";
+import { isRunpodCatalogOffer } from "./runpod-catalog.ts";
 
 const FIVE_PROVIDERS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
+const CURRENT_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "azure", "digitalocean", "verda"];
+const EXTENSION_PROVIDERS = ["azure", "digitalocean", "verda"];
 const LEGACY_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
 const ECB_PAGE = "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html";
 const ECB_XML = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
@@ -85,15 +88,20 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   check(collector.name === "gpu-price-monitor" && ["public-only", "authorized"].includes(String(collector.mode))
     && typeof collector.version === "string" && /^\d+\.\d+\.\d+$/.test(collector.version)
     && typeof collector.commit === "string" && /^[a-f0-9]{40}$/.test(collector.commit), "public collector identity");
-  // Existing bundled snapshots remain readable at their original observation
-  // time. New collections declare the exact five-provider scope explicitly.
+  // Pre-0.23 snapshots remain readable at their original observation time.
+  // New collections must declare all nine sources, including RunPod.
   const scoped = collector.providers !== undefined;
+  const versionParts = String(collector.version).split(".").map(Number);
+  const currentRelease = versionParts[0] > 0 || versionParts[1] >= 23;
+  check(scoped || !currentRelease, "declared collector scope");
+  const declared = scoped ? list(collector.providers, "collector providers") : [];
+  const tracked = declared.includes("runpod") ? CURRENT_PROVIDERS : FIVE_PROVIDERS;
   if (scoped) {
-    const declared = list(collector.providers, "collector providers");
-    check(declared.length === FIVE_PROVIDERS.length && new Set(declared).size === FIVE_PROVIDERS.length
-      && FIVE_PROVIDERS.every((provider) => declared.includes(provider)), "five-provider collector scope");
+    check((!currentRelease || tracked === CURRENT_PROVIDERS)
+      && declared.length === tracked.length && new Set(declared).size === tracked.length
+      && tracked.every((provider) => declared.includes(provider)), "tracked-provider collector scope");
   }
-  const REQUIRED = scoped ? FIVE_PROVIDERS : LEGACY_PROVIDERS;
+  const REQUIRED = scoped ? tracked : LEGACY_PROVIDERS;
   if (authorized) check(scoped && collector.validationPolicy === "visible-catalog-v1", "authorized collection policy");
 
   const catalog = row(data.generatedCatalog, "generatedCatalog");
@@ -114,7 +122,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   }
   if (!scoped) {
     // Compatibility for the immutable legacy fallback only. Current boards
-    // project five competitors and never surface these historical references.
+    // project tracked competitors and never surface dated page-derived RunPod prices.
     gpuSlugs.add("nvidia-a100-80gb");
     for (const provider of ["aws", "vast-ai", "hyperstack"]) providerSlugs.add(provider);
   }
@@ -153,6 +161,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     const id = text(offer.id, "offer ID"); check(!ids.has(id), "duplicate offer ID"); ids.add(id);
     check(gpuSlugs.has(slug(offer.gpuSlug)) && providerSlugs.has(slug(offer.providerSlug)), "unknown offer catalog reference");
     const provider = offer.providerSlug as string;
+    if (scoped && provider === "runpod") check(isRunpodCatalogOffer(offer as unknown as Offer), "RunPod catalog source/scope");
     check(["official-page", "seed"].includes(String(offer.dataStatus)), "offer provenance status");
     if (scoped) check(offer.dataStatus === "official-page", "current source-backed offer provenance");
     if (offer.dataStatus === "official-page") {
@@ -230,7 +239,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   }
 
   const seenSources = new Set<string>();
-  let partialSources = 0;
+  let partialSources = 0, failedSources = 0;
   for (const entry of list(data.sources, "sources")) {
     const source = row(entry, "source result"), provider = text(source.provider, "source provider");
     check(!seenSources.has(provider), "duplicate source"); seenSources.add(provider);
@@ -239,14 +248,27 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
       check(source.status === "reference" && source.offerCount === referenceCount, "reference source count");
       if (source.fetchedAt !== null) time(source.fetchedAt, ceiling, "reference timestamp");
     } else {
+      if (authorized && EXTENSION_PROVIDERS.includes(provider) && source.collectionStatus === "failed") {
+        check(source.status === "failed" && source.failureCode === "extension_source_failed" && source.offerCount === 0
+          && !officialCounts.get(provider) && list(source.sourceObservations, "failed extension observations").length === 0
+          && list(source.sourceExclusions, "failed extension exclusions").length === 0, "failed extension has no current quotes");
+        time(source.fetchedAt, ceiling, "extension attempt timestamp"); failedSources++;
+        continue;
+      }
       check(REQUIRED.includes(provider) && source.status === "ok" && source.offerCount === officialCounts.get(provider)
         && (source.offerCount as number) > 0, "required official source count/status");
       time(source.fetchedAt, ceiling, "source fetchedAt");
       if (authorized) {
         const observations = list(source.sourceObservations, "authorized source observations");
-        const expected = provider === "nebius" ? ["nebius_public", "nebius_account"] : [provider];
+        const exclusions = list(source.sourceExclusions ?? [], "source exclusions");
+        const excluded = exclusions.length === 1 ? row(exclusions[0], "source exclusion") : {};
+        const publicNebius = provider === "nebius" && exclusions.length === 1 && Object.keys(excluded).length === 3
+          && excluded.selection === "nebius_account" && excluded.reason === "billing_setup_required"
+          && excluded.status === "excluded_by_configuration";
+        check(exclusions.length === 0 || publicNebius, "authorized source exclusions");
+        const expected = publicNebius ? ["nebius_public"] : provider === "nebius" ? ["nebius_public", "nebius_account"] : [provider];
         check(observations.length === expected.length, "authorized source plan");
-        let count = 0, limited = false;
+        let count = 0, limited = publicNebius;
         observations.forEach((entry, index) => {
           const item = row(entry, "source observation");
           check(item.selection === expected[index] && Number.isSafeInteger(item.returned_count)
@@ -274,10 +296,10 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
   check(referenceCount === 0 || seenSources.has("reference"), "missing reference source");
 
   const coverage = row(data.coverage, "coverage"), totals = row(coverage.totals, "coverage totals");
-  check(coverage.schema_version === 1 && coverage.collection_status === (partialSources ? "partial" : "success") && coverage.scope === "returned_quotes", "coverage status");
+  check(coverage.schema_version === 1 && coverage.collection_status === (partialSources || failedSources ? "partial" : "success") && coverage.scope === "returned_quotes", "coverage status");
   const summary = row(coverage.source_summary, "coverage sources");
-  const librarySourceCount = scoped ? FIVE_PROVIDERS.length : 11;
-  check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount - partialSources && summary.failed_count === 0
+  const librarySourceCount = scoped ? tracked.length : 11;
+  check(summary.requested_count === librarySourceCount && summary.success_count === librarySourceCount - partialSources - failedSources && summary.failed_count === failedSources
     && summary.unknown_count === partialSources && summary.no_matches_count === 0, "coverage source success");
   check(totals.returned_quotes === libraryIndices.size && totals.considered_quotes === libraryIndices.size
     && totals.excluded_quotes === 0 && list(coverage.excluded_quote_indices, "excluded quote indices").length === 0, "coverage quote counts");
