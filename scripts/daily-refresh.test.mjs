@@ -44,3 +44,21 @@ test("a public snapshot cannot suppress an authorized refresh and invalid modes 
   assert.equal(collectionIsDue(data, now, "authorized"), true); // no verified sub-source plan
   assert.equal(collectionIsDue(data, now, "public"), true);
 });
+
+
+test("switching the explicit Nebius account/public profile requires a fresh collection", () => {
+  const now = new Date("2026-10-20T02:45:00Z");
+  const data = snapshot("2026-10-20T02:40:00Z");
+  data.collection_mode = "authorized"; data.validation_policy = "visible-catalog-v1"; data.status = "partial";
+  for (const source of data.provider_results) {
+    source.source_observations = [{ selection: source.provider === "nebius" ? "nebius_public" : source.provider,
+      status: "success", observed_at: data.collected_at, returned_count: 1, limitations: [] }];
+  }
+  const nebius = data.provider_results.find(source => source.provider === "nebius");
+  nebius.status = "partial";
+  nebius.source_exclusions = [{ selection: "nebius_account", reason: "billing_setup_required", status: "excluded_by_configuration" }];
+  assert.equal(collectionIsDue(data, now, "authorized", "public"), false);
+  assert.equal(collectionIsDue(data, now, "authorized", "oidc"), true);
+  assert.equal(collectionIsDue(data, now, "authorized", "token"), true);
+  assert.throws(() => collectionIsDue(data, now, "authorized", "unknown"), /Invalid Nebius/);
+});

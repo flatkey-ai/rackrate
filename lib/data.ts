@@ -1,9 +1,11 @@
 import { cheapestComparableOffer } from "./pricing.ts";
 import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from "./region-matching.ts";
+import { isRunpodCatalogOffer } from "./runpod-catalog.ts";
+import { isFormalComparisonOffer } from "./comparison-scope.ts";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
-export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"] as const;
+export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda"] as const;
 const competitorProviders = new Set<string>(COMPETITOR_PROVIDER_SLUGS);
 const priorityGpuSlugs = ["nvidia-h100", "nvidia-h200", "nvidia-b200", "nvidia-b300"];
 
@@ -83,6 +85,9 @@ export type Offer = {
   priceApplicability?: Record<string, unknown> | null;
   capacityLocations?: Record<string, unknown>[];
   sourceType?: string;
+  quoteConditions?: Record<string, unknown> | string[] | null;
+  apiSourceUrl?: string | null;
+  priceBasisSourceUrl?: string | null;
   collectionSource?: string | null;
   visibleSource?: string | null;
   countryCode: string;
@@ -223,7 +228,7 @@ const curatedProviders: Provider[] = [
   },
   {
     slug: "runpod",
-    name: "Runpod",
+    name: "RunPod",
     type: "GPU cloud",
     hq: "United States",
     billing: "Per second",
@@ -458,11 +463,14 @@ export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies
 
 export function createPricingData(dataset: PricingDataset) {
   // Historical snapshots remain intact. The current board only projects
-  // source-backed offers from the five explicitly tracked competitors.
-  const currentOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
-    && offer.dataStatus === "official-page");
+  // source-backed offers from the nine explicitly tracked competitors.
+  const sourceOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
+    && offer.dataStatus === "official-page"
+    && (offer.providerSlug !== "runpod" || isRunpodCatalogOffer(offer)));
+  const currentOffers = sourceOffers.filter(isFormalComparisonOffer);
+  const auditOffers = sourceOffers.filter((offer) => !isFormalComparisonOffer(offer));
   const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
-  const currentProviderSlugs = new Set(currentOffers.map((offer) => offer.providerSlug));
+  const currentProviderSlugs = new Set([...sourceOffers.map((offer) => offer.providerSlug), ...dataset.sources.filter(source => competitorProviders.has(source.provider) && source.status === "failed").map(source => source.provider)]);
   const gpuCatalog = new Map(curatedGpus.filter((gpu) => currentGpuSlugs.has(gpu.slug)).map((gpu) => [gpu.slug, gpu]));
   for (const entry of dataset.generatedCatalog?.gpus ?? []) {
     if (!currentGpuSlugs.has(entry.slug)) continue;
@@ -490,7 +498,7 @@ export function createPricingData(dataset: PricingDataset) {
       type: entry.type ?? curated?.type ?? "GPU cloud",
       hq: entry.hq ?? curated?.hq ?? "Not catalogued",
       billing: entry.billing ?? curated?.billing ?? "As published",
-      summary: entry.summary ?? "Public provider pricing collected without credentials.",
+      summary: entry.summary ?? "Official source prices; public and signed-in scopes remain labelled.",
     });
   }
   const providers: Provider[] = [...providerCatalog.values()];
@@ -507,16 +515,23 @@ export function createPricingData(dataset: PricingDataset) {
     zones: offer.zones ?? [],
   }));
   const offerDatasetGeneratedAt = dataset.generatedAt;
-  const offerDatasetSources = dataset.sources.filter((source) => competitorProviders.has(source.provider));
+  const offerDatasetSources = dataset.sources.filter((source) => competitorProviders.has(source.provider)
+    && currentProviderSlugs.has(source.provider));
 
   const getGpu = (slug: string) => gpus.find((gpu) => gpu.slug === slug);
   // Flatkey keeps its separate commercial profile and CTA, with no competitor
-  // price records or directory placement in the five-source comparison.
+  // price records or directory placement in the nine-source comparison.
   const getProvider = (slug: string) => slug === "flatkey"
     ? curatedProviders.find((provider) => provider.slug === "flatkey")
     : providers.find((provider) => provider.slug === slug);
   const getOffersForGpu = (slug: string) => offers.filter((offer) => offer.gpuSlug === slug);
   const getOffersForProvider = (slug: string) => offers.filter((offer) => offer.providerSlug === slug);
+  const getAuditOffersForProvider = (slug: string) => auditOffers.filter((offer) => offer.providerSlug === slug);
+  const getProviderSourceNotice = (slug: string) => offerDatasetSources.some(source => source.provider === slug && source.status === "failed")
+    ? "The latest attempt to collect this source failed. No older prices are carried into the current comparison." : slug === "nebius" && offerDatasetSources.some((source) =>
+    source.provider === slug && Array.isArray(source.sourceExclusions) && source.sourceExclusions.some((entry) =>
+      entry?.selection === "nebius_account" && entry.reason === "billing_setup_required" && entry.status === "excluded_by_configuration"))
+    ? "Public sources only. The signed-in account calculator is excluded until the provider’s billing setup is completed." : "";
   const getRegion = (slug: string) => regions.find((region) => region.slug === slug);
   const getOffersForRegion = (slug: string) => {
     const region = getRegion(slug);
@@ -555,14 +570,23 @@ export function createPricingData(dataset: PricingDataset) {
     collector: dataset.collector ?? null,
     libraryCoverage: { totals: dataset.coverage?.totals ?? null },
     fx: dataset.fx ? { rateDate: dataset.fx.rateDate, sourceName: dataset.fx.sourceName, sourceUrl: dataset.fx.sourceUrl, observedAt: dataset.fx.observedAt } : null,
+    sourceCounts: {
+      offers: dataset.offers.length,
+      officialOffers: dataset.offers.filter(offer => offer.dataStatus === "official-page").length,
+      referenceOffers: dataset.offers.filter(offer => offer.dataStatus === "seed").length,
+      offlineOffers: dataset.offers.filter(offer => offer.availability === "unavailable").length,
+      contactSalesOffers: dataset.offers.filter(offer => offer.quoteStatus === "contact_sales").length,
+    },
     counts: {
       offers: offers.length,
       officialOffers: offers.filter((offer) => offer.dataStatus === "official-page").length,
       referenceOffers: offers.filter((offer) => offer.dataStatus === "seed").length,
       offlineOffers: offers.filter((offer) => offer.availability === "unavailable").length,
       contactSalesOffers: offers.filter((offer) => offer.quoteStatus === "contact_sales").length,
+      sourceRecords: sourceOffers.length,
+      auditOnlyRecords: auditOffers.length,
     },
-    sources: offerDatasetSources.map((source) => ({ provider: source.provider, status: source.status, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
+    sources: offerDatasetSources.map((source) => ({ provider: source.provider, status: source.status, collectionStatus: source.collectionStatus ?? null, url: typeof source.url === "string" ? source.url : null, offerCount: typeof source.offerCount === "number" ? source.offerCount : 0, failureCode: source.failureCode === "extension_source_failed" ? source.failureCode : null, sourceExclusions: Array.isArray(source.sourceExclusions) ? source.sourceExclusions : [], fetchedAt: typeof source.fetchedAt === "string" ? source.fetchedAt : null })),
     providerCounts: Object.fromEntries([...new Set(offers.map((offer) => offer.providerSlug))].sort().map((provider) => [provider, offers.filter((offer) => offer.providerSlug === provider).length])),
   };
 
@@ -570,7 +594,7 @@ export function createPricingData(dataset: PricingDataset) {
     offers, gpus, providers, regions,
     generatedAt: dataset.generatedAt, sources: offerDatasetSources,
     offerDatasetGeneratedAt, offerDatasetSources,
-    getGpu, getProvider, getOffersForGpu, getOffersForProvider,
+    getGpu, getProvider, getOffersForGpu, getOffersForProvider, getAuditOffersForProvider, getProviderSourceNotice,
     getRegion, getOffersForRegion, getRegionCoverage, isRegionIndexable, getRegionForOffer,
     getCheapestOffer, pricingDatasetStatus,
   };

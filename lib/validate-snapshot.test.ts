@@ -77,6 +77,41 @@ test("an explicit five-provider snapshot validates and excludes every discontinu
   }
 });
 
+test("new releases require nine providers and verified RunPod API scope, while old five-source fallback remains readable", () => {
+  const data = fiveProviderSnapshot();
+  data.collector.version = "0.23.0";
+  assert.throws(() => validatePricingDataset(data, observed), /tracked-provider/);
+  data.collector.providers.push("runpod");
+  const row = { ...structuredClone(data.offers.find((entry: { sourceCurrency: string; quoteStatus: string }) => entry.sourceCurrency === "USD" && entry.quoteStatus === "quoted")),
+    id: "new-runpod-api", providerSlug: "runpod", sourceQuoteIndex: data.offers.length,
+    sourceUrl: "https://www.runpod.io/pricing", apiSourceUrl: "https://api.runpod.io/graphql",
+    sourceType: "official_public_api", accountScope: "public_catalog", cloudTier: "secure", membershipRequired: false,
+    billingMode: "on_demand", billingUnit: "GPU-hour", rentalType: "On-demand", gpuCount: null,
+    countryCode: "", regions: [], zones: [], computeCountries: [], applicableRegions: [],
+    priceScope: "unlocated_catalog", geographicScope: "unspecified", region: "Not published" };
+  data.offers.push(row);
+  data.generatedCatalog.providers.push({ slug: "runpod", name: "RunPod", website: "https://www.runpod.io" });
+  data.sources.push({ provider: "runpod", status: "ok", offerCount: 1, url: row.sourceUrl, fetchedAt: row.observedAt });
+  const model = [...data.coverage.models, ...data.coverage.extra_models].find(entry => entry.gpu_model === row.gpuModel);
+  model.quote_indices.push(row.sourceQuoteIndex); model.quote_count++;
+  data.coverage.totals.returned_quotes++; data.coverage.totals.considered_quotes++;
+  data.coverage.source_summary.requested_count++; data.coverage.source_summary.success_count++;
+  for (const provider of ["azure", "digitalocean", "verda"]) {
+    const extra = { ...row, providerSlug: provider, id: `new-${provider}`, sourceQuoteIndex: data.offers.length };
+    data.offers.push(extra); data.collector.providers.push(provider);
+    data.generatedCatalog.providers.push({ slug: provider, name: provider, website: `https://${provider}.example` });
+    data.sources.push({ provider, status: "ok", offerCount: 1, url: row.sourceUrl, fetchedAt: row.observedAt });
+    model.quote_indices.push(extra.sourceQuoteIndex); model.quote_count++;
+    data.coverage.totals.returned_quotes++; data.coverage.totals.considered_quotes++;
+    data.coverage.source_summary.requested_count++; data.coverage.source_summary.success_count++;
+  }
+  assert.equal(validatePricingDataset(data, observed), data);
+  for (const change of [{ sourceType: "public_page" }, { apiSourceUrl: null }, { countryCode: "US" }, { cloudTier: "member" }]) {
+    const changed = structuredClone(data); Object.assign(changed.offers.find((item: { providerSlug: string }) => item.providerSlug === "runpod"), change);
+    assert.throws(() => validatePricingDataset(changed, observed), /RunPod catalog source/);
+  }
+});
+
 test("location provenance cannot turn platform coverage into a verified country price", () => {
   const data = fiveProviderSnapshot();
   const offer = data.offers.find((entry: { providerSlug: string }) => entry.providerSlug === "nebius");
@@ -195,6 +230,64 @@ test("authorized snapshots preserve partial visibility while requiring the exact
     (value: typeof data) => { value.sources.find((source: { provider: string }) => source.provider === "nebius").sourceObservations[1].limitations[0].status = "authentication_error"; },
   ]) {
     const changed = structuredClone(data); mutate(changed);
+    assert.throws(() => validatePricingDataset(changed, observed));
+  }
+});
+
+
+test("explicit Nebius public-only profile records its account exclusion and keeps overall partial status", () => {
+  const data = fiveProviderSnapshot();
+  data.collector.mode = "authorized"; data.collector.validationPolicy = "visible-catalog-v1";
+  for (const source of data.sources) {
+    source.collectionStatus = source.provider === "nebius" ? "partial" : "success";
+    source.sourceObservations = [{ selection: source.provider === "nebius" ? "nebius_public" : source.provider,
+      status: "success", returned_count: source.offerCount, observed_at: source.fetchedAt, source_url: source.url, limitations: [] }];
+    source.sourceExclusions = source.provider === "nebius" ? [{ selection: "nebius_account", reason: "billing_setup_required", status: "excluded_by_configuration" }] : [];
+  }
+  data.coverage.collection_status = "partial";
+  data.coverage.source_summary.success_count = 4; data.coverage.source_summary.unknown_count = 1;
+  assert.equal(validatePricingDataset(data, observed), data);
+  for (const mutate of [
+    (value: typeof data) => { value.sources[0].sourceExclusions = []; },
+    (value: typeof data) => { value.sources[0].sourceExclusions[0].reason = "authentication_failed"; },
+    (value: typeof data) => { value.sources[0].collectionStatus = "success"; },
+  ]) {
+    const changed = structuredClone(data); mutate(changed);
+    assert.throws(() => validatePricingDataset(changed, observed));
+  }
+});
+
+
+test("optional expansion failure is validated as zero current quotes and never as a fresh successful source", () => {
+  const data = fiveProviderSnapshot();
+  data.collector.version = "0.23.0"; data.collector.mode = "authorized"; data.collector.validationPolicy = "visible-catalog-v1";
+  const base = data.offers.find((entry: { sourceCurrency: string; quoteStatus: string }) => entry.sourceCurrency === "USD" && entry.quoteStatus === "quoted");
+  const runpod = { ...structuredClone(base), id: "current-runpod", providerSlug: "runpod", sourceQuoteIndex: data.offers.length,
+    sourceUrl: "https://www.runpod.io/pricing", apiSourceUrl: "https://api.runpod.io/graphql", sourceType: "official_public_api",
+    accountScope: "public_catalog", cloudTier: "secure", membershipRequired: false, billingMode: "on_demand", billingUnit: "GPU-hour",
+    gpuCount: null, countryCode: "", regions: [], zones: [], computeCountries: [], applicableRegions: [], priceScope: "unlocated_catalog", geographicScope: "unspecified" };
+  data.offers.push(runpod); data.collector.providers.push("runpod", "azure", "digitalocean", "verda");
+  data.sources.push({ provider: "runpod", status: "ok", offerCount: 1, url: runpod.sourceUrl, fetchedAt: runpod.observedAt });
+  const model = [...data.coverage.models, ...data.coverage.extra_models].find(entry => entry.gpu_model === runpod.gpuModel);
+  model.quote_indices.push(runpod.sourceQuoteIndex); model.quote_count++;
+  data.coverage.totals.returned_quotes++; data.coverage.totals.considered_quotes++;
+  for (const source of data.sources) {
+    source.collectionStatus = "success"; source.sourceExclusions = [];
+    const selections = source.provider === "nebius" ? ["nebius_public", "nebius_account"] : [source.provider];
+    source.sourceObservations = selections.map((selection: string, i: number) => ({ selection, status: "success", limitations: [],
+      returned_count: selections.length === 1 ? source.offerCount : i ? source.offerCount - 1 : 1,
+      observed_at: source.fetchedAt, source_url: source.url }));
+  }
+  for (const provider of ["runpod", "azure", "digitalocean", "verda"]) {
+    data.generatedCatalog.providers.push({ slug: provider, name: provider, website: `https://${provider}.example` });
+    if (provider !== "runpod") data.sources.push({ provider, status: "failed", collectionStatus: "failed", failureCode: "extension_source_failed",
+      offerCount: 0, url: `https://${provider}.example`, fetchedAt: data.generatedAt, sourceObservations: [], sourceExclusions: [] });
+  }
+  data.coverage.collection_status = "partial";
+  Object.assign(data.coverage.source_summary, { requested_count: 9, success_count: 6, failed_count: 3, unknown_count: 0 });
+  assert.equal(validatePricingDataset(data, observed), data);
+  for (const change of [{ status: "ok" }, { offerCount: 1 }, { failureCode: "anything" }]) {
+    const changed = structuredClone(data); Object.assign(changed.sources.find((source: { provider: string }) => source.provider === "azure"), change);
     assert.throws(() => validatePricingDataset(changed, observed));
   }
 });

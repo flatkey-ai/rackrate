@@ -14,7 +14,7 @@ function Chevron({ open = false }: { open?: boolean }) {
 
 function RateLabel({ offer }: { offer: Offer }) {
   const audience = offerAudience(offer);
-  return <><span className={`${styles.rateLabel} ${audience === "member" ? styles.memberRate : audience === "conditional" ? styles.conditional : styles.regularRate}`}>{isAccountSpecificPrice(offer) ? "Account quote" : audience === "member" ? "Member rate" : audience === "conditional" ? "Eligibility rate" : "Regular rate"}</span>{audience === "member" && hasAdditionalEligibility(offer) && <span className={styles.conditional}>Conditions apply</span>}</>;
+  return <><span className={`${styles.rateLabel} ${audience === "member" ? styles.memberRate : audience === "conditional" ? styles.conditional : styles.regularRate}`}>{isAccountSpecificPrice(offer) ? "Account quote" : audience === "member" ? "Member rate · membership required" : audience === "conditional" ? "Eligibility rate" : "Regular rate"}</span>{audience === "member" && hasAdditionalEligibility(offer) && <span className={styles.conditional}>Conditions apply</span>}</>;
 }
 
 function OfferTerms({ offer }: { offer: Offer }) {
@@ -58,7 +58,7 @@ function SummaryPrice({ offers, audience, providers }: { offers: Offer[]; audien
   }))];
   const originals = new Set(offers.map((entry) => `${entry.sourceCurrency}|${entry.pricePerGpuUnit}|${entry.fx?.rateDate ?? ""}`));
   return <div className={`${styles.summaryPrice} ${audience === "member" ? styles.summaryMember : ""}`}>
-    <span className={styles.summaryLabel}>Lowest {audience}</span>
+    <span className={styles.summaryLabel}>Lowest {audience}{audience === "member" ? " · membership required" : ""}</span>
     {offer ? <>
       <strong>{formatOfferPrice(offer)}</strong>
       <span className={styles.summaryPlatforms}>{platforms.slice(0, 3).join(" · ")}{platforms.length > 3 ? ` +${platforms.length - 3} platforms` : ""}{offers.length > 1 && <small>{offers.length} tied offers</small>}</span>

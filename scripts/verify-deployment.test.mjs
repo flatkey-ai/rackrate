@@ -73,3 +73,14 @@ test("verification times out on stale snapshots and supports an explicit local t
   }
   assert.throws(() => verificationOptions(["--source-url", "https://example.com"]));
 });
+
+
+test("publication verifies complete source counts separately from the strict comparison subset", () => {
+  const projected = { ...live, sourceCounts: live.counts, counts: { ...live.counts, offers: 0, officialOffers: 0, offlineOffers: 0 } };
+  assert.equal(verifyLivePricing(projected, expected, sha256), true);
+  assert.throws(() => verifyLivePricing({ ...projected, sourceCounts: { ...live.counts, offers: 2 } }, expected, sha256));
+  const withFailure = { ...expected, sources: [...expected.sources, { provider: "azure", status: "failed", offerCount: 0, failureCode: "extension_source_failed" }] };
+  const withFailureLive = { ...projected, sources: withFailure.sources };
+  assert.equal(verifyLivePricing(withFailureLive, withFailure, sha256), true);
+  assert.throws(() => verifyLivePricing(projected, withFailure, sha256), /failure disclosure/);
+});

@@ -1,2 +1,2 @@
-# Fixed collector 0.22.0 commit; public is default, authorized mode is explicitly opt-in.
-flatkey-gpu-price-monitor[browser] @ git+https://github.com/flatkey-ai/gpu-price-monitor.git@7c1722de4cf1c47e924e6d9502d6c0ab4d43393e
+# Fixed collector 0.23.0 commit; public is default, authorized mode is explicitly opt-in.
+flatkey-gpu-price-monitor[browser] @ git+https://github.com/flatkey-ai/gpu-price-monitor.git@6cb76c04c764ce91b8cf0f70b6c35900dbf00006

@@ -1,0 +1,278 @@
+{
+  "prices": [
+    {
+      "provider": "runpod",
+      "product_type": "gpu_instance",
+      "gpu_model": "H100",
+      "raw_name": "H100 SXM",
+      "raw_sku": "NVIDIA H100 80GB HBM3",
+      "gpu_variant": "SXM",
+      "vram_gb": 80,
+      "gpu_count": 1,
+      "amount": "3.99",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "price_basis": "starting_price",
+      "quote_status": "starting_at",
+      "cloud_tier": "secure",
+      "conditions": {
+        "cloud_type": "secure_cloud",
+        "rate_type": "lowest_available",
+        "quote_request": {
+          "dataCenterId": "AP-IN-1",
+          "gpuCount": 1,
+          "secureCloud": true
+        },
+        "minimum_ram_gb": 251,
+        "minimum_vcpus": 28,
+        "stock_status": "Low"
+      },
+      "regions": [
+        "AP-IN-1"
+      ],
+      "zones": [
+        "AP-IN-1"
+      ],
+      "geographic_scope": "requested_zone",
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "observed_at": "2026-10-23T07:06:03.441962+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://www.runpod.io/pricing",
+      "source_type": "official_public_api",
+      "api_source_url": "https://api.runpod.io/graphql",
+      "price_basis_source_url": "https://www.runpod.io/articles/comparison/runpod-vs-replicate",
+      "availability": "available",
+      "notes": [
+        "Lowest currently quoted one-GPU on-demand price for the requested data center and cloud tier; storage excluded.",
+        "Minimum CPU/RAM are aggregate resource minima, not a complete selected machine specification.",
+        "This is a starting price; no resource was created and checkout orderability was not tested."
+      ],
+      "price_scope": "requested_zone_quote",
+      "region_price_verified": true,
+      "compute_countries": [
+        "IN"
+      ],
+      "location_source": {
+        "source_url": "https://api.runpod.io/graphql",
+        "documentation_url": "https://github.com/runpod/runpodctl/blob/dd55bcff14ef1faadeb27c8f08edfeb8795e026f/internal/api/gpu.go",
+        "basis": "explicit_data_center_location_and_price_request",
+        "data_center_id": "AP-IN-1",
+        "location": "India",
+        "country_code": "IN"
+      }
+    },
+    {
+      "provider": "runpod",
+      "product_type": "gpu_instance",
+      "gpu_model": "H200",
+      "raw_name": "H200 SXM",
+      "raw_sku": "NVIDIA H200",
+      "gpu_variant": "SXM",
+      "vram_gb": 141,
+      "gpu_count": 1,
+      "amount": "5.29",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "price_basis": "starting_price",
+      "quote_status": "starting_at",
+      "cloud_tier": "secure",
+      "conditions": {
+        "cloud_type": "secure_cloud",
+        "rate_type": "lowest_available",
+        "quote_request": {
+          "dataCenterId": "AP-JP-1",
+          "gpuCount": 1,
+          "secureCloud": true
+        },
+        "minimum_ram_gb": 251,
+        "minimum_vcpus": 20,
+        "stock_status": "Low"
+      },
+      "regions": [
+        "AP-JP-1"
+      ],
+      "zones": [
+        "AP-JP-1"
+      ],
+      "geographic_scope": "requested_zone",
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "observed_at": "2026-10-23T07:06:03.441962+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://www.runpod.io/pricing",
+      "source_type": "official_public_api",
+      "api_source_url": "https://api.runpod.io/graphql",
+      "price_basis_source_url": "https://www.runpod.io/articles/comparison/runpod-vs-replicate",
+      "availability": "available",
+      "notes": [
+        "Lowest currently quoted one-GPU on-demand price for the requested data center and cloud tier; storage excluded.",
+        "Minimum CPU/RAM are aggregate resource minima, not a complete selected machine specification.",
+        "This is a starting price; no resource was created and checkout orderability was not tested."
+      ],
+      "price_scope": "requested_zone_quote",
+      "region_price_verified": true,
+      "compute_countries": [
+        "JP"
+      ],
+      "location_source": {
+        "source_url": "https://api.runpod.io/graphql",
+        "documentation_url": "https://github.com/runpod/runpodctl/blob/dd55bcff14ef1faadeb27c8f08edfeb8795e026f/internal/api/gpu.go",
+        "basis": "explicit_data_center_location_and_price_request",
+        "data_center_id": "AP-JP-1",
+        "location": "Japan",
+        "country_code": "JP"
+      }
+    },
+    {
+      "provider": "runpod",
+      "product_type": "gpu_instance",
+      "gpu_model": "A40",
+      "raw_name": "A40",
+      "raw_sku": "NVIDIA A40",
+      "gpu_variant": null,
+      "vram_gb": 48,
+      "gpu_count": 1,
+      "amount": "0.59",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "price_basis": "starting_price",
+      "quote_status": "starting_at",
+      "cloud_tier": "secure",
+      "conditions": {
+        "cloud_type": "secure_cloud",
+        "rate_type": "lowest_available",
+        "quote_request": {
+          "dataCenterId": "CA-MTL-1",
+          "gpuCount": 1,
+          "secureCloud": true
+        },
+        "minimum_ram_gb": 50,
+        "minimum_vcpus": 9,
+        "stock_status": "Low"
+      },
+      "regions": [
+        "CA-MTL-1"
+      ],
+      "zones": [
+        "CA-MTL-1"
+      ],
+      "geographic_scope": "requested_zone",
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "observed_at": "2026-10-23T07:06:03.441962+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://www.runpod.io/pricing",
+      "source_type": "official_public_api",
+      "api_source_url": "https://api.runpod.io/graphql",
+      "price_basis_source_url": "https://www.runpod.io/articles/comparison/runpod-vs-replicate",
+      "availability": "available",
+      "notes": [
+        "Lowest currently quoted one-GPU on-demand price for the requested data center and cloud tier; storage excluded.",
+        "Minimum CPU/RAM are aggregate resource minima, not a complete selected machine specification.",
+        "This is a starting price; no resource was created and checkout orderability was not tested."
+      ],
+      "price_scope": "requested_zone_quote",
+      "region_price_verified": true,
+      "compute_countries": [
+        "CA"
+      ],
+      "location_source": {
+        "source_url": "https://api.runpod.io/graphql",
+        "documentation_url": "https://github.com/runpod/runpodctl/blob/dd55bcff14ef1faadeb27c8f08edfeb8795e026f/internal/api/gpu.go",
+        "basis": "explicit_data_center_location_and_price_request",
+        "data_center_id": "CA-MTL-1",
+        "location": "Canada",
+        "country_code": "CA"
+      }
+    }
+  ],
+  "catalog_coverage": {
+    "scope": "catalog_and_country_verified_data_centers_one_gpu_lowest_available",
+    "catalog_quote_count": 67,
+    "regional_quote_count": 34,
+    "regional_gpu_count": 1,
+    "data_center_count": 52,
+    "country_verified_data_center_count": 38,
+    "queried_data_center_count": 38,
+    "unquoted_region_tier_count": 2512,
+    "country_unverified_data_centers": [
+      {
+        "data_center_id": "EU-CZ-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EU-DK-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EU-NL-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EU-RO-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EU-SE-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EU-SE-2",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-IS-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-IS-2",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-IS-3",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-IS-4",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-IS-5",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-NO-1",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "EUR-NO-2",
+        "location": "Europe",
+        "code": "country_not_explicit"
+      },
+      {
+        "data_center_id": "SEA-SG-1",
+        "location": "SE Asia",
+        "code": "country_not_explicit"
+      }
+    ]
+  }
+}

@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 
 export default async function ProvidersIndexPage() {
   const snapshot = await getPricingSnapshot();
-  const { getGpu, getOffersForProvider, providers } = snapshot;
+  const { getGpu, getOffersForProvider, getAuditOffersForProvider, getProviderSourceNotice, providers } = snapshot;
 
   return (
     <main className="directory-page">
@@ -44,11 +44,13 @@ export default async function ProvidersIndexPage() {
       <section className="directory-content shell">
         <div className="directory-intro">
           <div><span className="eyebrow">Provider scorecards</span><h2>Compare the operating model, not just the rate.</h2></div>
-          <p>Compare the five tracked providers: Nebius, Crusoe, Lambda, UCloud and AutoDL. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey’s separate commercial profile and quote links are not competitor prices. Comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
+          <p>Configured sources: Nebius, Crusoe, Lambda, UCloud, AutoDL, RunPod, Microsoft Azure, DigitalOcean and Verda. Listing counts describe RackRate’s coverage, not a provider’s entire catalogue. Flatkey’s separate commercial profile and quote links are not competitor prices. Comparison rows are grouped by billing period, purchase model and price basis before sorting in USD. Summary benchmarks use eligible hourly on-demand prices, converted with the dated ECB rates disclosed below.</p>
         </div>
         <div className="directory-card-grid provider-directory-grid">
           {providers.map((provider) => {
             const providerOffers = getOffersForProvider(provider.slug);
+            const auditCount = getAuditOffersForProvider(provider.slug).length;
+            const sourceNotice = getProviderSourceNotice(provider.slug);
             const floor = cheapestComparableOffer(providerOffers);
             const gpuNames = Array.from(new Set(providerOffers.map((offer) => getGpu(offer.gpuSlug)?.shortName).filter(Boolean)));
             const regionCount = new Set(providerOffers.map((offer) => offer.region)).size;
@@ -57,6 +59,8 @@ export default async function ProvidersIndexPage() {
                 <div className="directory-card-meta"><span>{provider.type}</span><span>{provider.hq}</span></div>
                 <Link href={`/providers/${provider.slug}`}><h2>{provider.name}</h2></Link>
                 <p>{provider.summary}</p>
+                {sourceNotice && <p>{sourceNotice}</p>}
+                {providerOffers.length === 0 && auditCount > 0 && <p>No verified regional fixed rates yet. {auditCount} source records are available for audit.</p>}
                 <dl className="directory-facts">
                   <div><dt>Billing</dt><dd>{provider.billing}</dd></div>
                   <div><dt>{provider.slug === "flatkey" ? "Capacity" : "Indexed coverage"}</dt><dd>{provider.slug === "flatkey" ? "Model, quantity and region matched per request" : `${providerOffers.length} offers · ${regionCount} region${regionCount === 1 ? "" : "s"}`}</dd></div>

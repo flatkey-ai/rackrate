@@ -46,8 +46,8 @@ test("unknown catalog locations are never classified by headquarters, currency o
   assert.deepEqual(data.getOffersForRegion("global"), []);
 });
 
-test("offline China records remain in the country board without becoming a rentable price floor", () => {
-  const offline = quote({ providerSlug: "ucloud", region: "cn-wlcb", regions: ["cn-wlcb"], zones: ["cn-wlcb-01"], countryCode: "CN", availability: "unavailable", rentalType: "Monthly", billingUnit: "GPU-month", pricePerGpuHour: null });
+test("offline hourly China records remain in the country board without becoming a rentable price floor", () => {
+  const offline = quote({ providerSlug: "ucloud", region: "cn-wlcb", regions: ["cn-wlcb"], zones: ["cn-wlcb-01"], countryCode: "CN", availability: "unavailable" });
   const data = createPricingData(dataset([offline]));
   assert.deepEqual(data.getOffersForRegion("china").map((offer) => offer.id), ["regional"]);
   assert.deepEqual(data.getRegionCoverage("china"), { offerCount: 1, officialCount: 1, referenceCount: 0, offlineCount: 1, regionalPriceCount: 1, coverageOnlyCount: 0 });
@@ -93,16 +93,17 @@ test("platform availability codes do not turn a generic catalog rate into a regi
   const regional = quote({ id: "regional-retail-rate", providerSlug: "ucloud", countryCode: "SE", region: "test-se", regions: ["test-se"] });
   const data = createPricingData(dataset([coverage, regional]));
   const europeanOffers = data.getOffersForRegion("europe");
-  assert.equal(europeanOffers.length, 2);
+  assert.equal(europeanOffers.length, 1);
+  assert.deepEqual(data.getAuditOffersForProvider("nebius").map((offer) => offer.id), ["generic-platform-rate"]);
   assert.equal(isRegionSpecificPrice(coverage), false);
   assert.equal(isRegionSpecificPrice(regional), true);
   assert.equal(isRegionSpecificPrice(quote({ region: "Not published", regions: [] })), false);
   assert.equal(isRegionSpecificPrice(quote({ region: "Global", regions: ["Global"] })), false);
   assert.equal(isRegionSpecificPrice(quote({ dataStatus: "seed" })), false);
-  assert.equal(cheapestComparableOffer(europeanOffers)?.id, "generic-platform-rate");
+  assert.equal(cheapestComparableOffer(europeanOffers)?.id, "regional-retail-rate");
   assert.equal(cheapestComparableOffer(europeanOffers.filter(isRegionSpecificPrice))?.id, "regional-retail-rate");
   assert.equal(data.getRegionCoverage("europe").regionalPriceCount, 1);
-  assert.equal(data.getRegionCoverage("europe").coverageOnlyCount, 1);
+  assert.equal(data.getRegionCoverage("europe").coverageOnlyCount, 0);
   assert.deepEqual(getOfferCountryCodes(coverage), ["FI"]);
 });
 
