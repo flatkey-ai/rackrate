@@ -26,6 +26,9 @@ function fixture(additional = []) {
   const prices = [...REQUIRED_PROVIDERS.map((provider) => quote(provider)), ...additional];
   return {
     schema_version: 1, collected_at: observedAt, status: "success", prices,
+    provider_exports: { schema_version: 1,
+      tables: Object.fromEntries(REQUIRED_PROVIDERS.map(provider => [provider, "\ufeffprovider,gpu_model,gpu_count,country,region,zone,gpu_hour_amount,instance_hour_amount,currency,billing_mode,pricing_conditions,availability,source_url,observed_at,instance_sku,resource_config\r\n"])),
+      coverage: Object.fromEntries(REQUIRED_PROVIDERS.map(provider => [provider, { source_quote_count: prices.filter(q => q.provider === provider).length, exported_quote_count: 0, row_count: 0, shared_catalog_quote_count: 0, ordinary_member_pairs_hidden: 0, excluded_quote_count: prices.filter(q => q.provider === provider).length, excluded_reasons: { country_region_not_verified: prices.filter(q => q.provider === provider).length } }])) },
     provider_results: REQUIRED_PROVIDERS.map((provider) => ({
       provider, source_url: `https://example.com/${provider}`, source_type: "public_page",
       status: "success", observed_at: observedAt, returned_count: prices.filter((item) => item.provider === provider).length,
@@ -37,8 +40,8 @@ function fixture(additional = []) {
     },
   };
 }
-test("the scheduled collector requires exactly the nine selected sources", () => {
-  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda"]);
+test("the scheduled collector requires exactly the ten selected sources", () => {
+  assert.deepEqual(REQUIRED_PROVIDERS, ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda", "vast"]);
 });
 
 test("captured RunPod Secure/Community rates retain exact source prices, variants and unknown location", () => {
@@ -235,7 +238,7 @@ test("Python selection prefers explicit path then clone-local venv over global P
   assert.equal(collectionPython({ explicit: "", root: "/repo", exists: () => false }), "python3");
 });
 
-test("current dataset contains only this nine-provider collection and never reobserves old offers", () => {
+test("current dataset contains only this ten-provider collection and never reobserves old offers", () => {
   const references = ["vast-ai", "aws", "hyperstack", "runpod", "flatkey"].map((providerSlug) => ({
     id: `dated-${providerSlug}`, providerSlug, dataStatus: "seed", observedAt: "2020-01-01T00:00:00Z",
   }));
@@ -243,7 +246,7 @@ test("current dataset contains only this nine-provider collection and never reob
   const before = JSON.stringify(current);
   const output = buildRackRateDataset(current, fixture());
   assert.equal(output.schemaVersion, 2);
-  assert.equal(output.offers.length, 9);
+  assert.equal(output.offers.length, 10);
   assert.ok(output.offers.every((offer) => REQUIRED_PROVIDERS.includes(offer.providerSlug) && offer.dataStatus === "official-page"));
   assert.ok(!output.offers.some((offer) => offer.id === "obsolete"));
   assert.deepEqual(output.sources.map((source) => source.provider).sort(), [...REQUIRED_PROVIDERS].sort());
@@ -322,10 +325,12 @@ test("refresh retains complete raw provenance and publishes dataset after histor
     },
     collect: async () => result,
     collectRates: async () => rates,
-    write: async (path, body) => files.set(path, JSON.parse(body)),
+    write: async (path, body) => files.set(path, path.endsWith(".csv.tmp") ? body : JSON.parse(body)),
     move: async (from, to) => publications.push([from, to]), remove: async () => {}, makeDirectory: async () => {},
   });
-  assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), result);
+  const { provider_exports, ...withoutCsv } = result;
+  assert.deepEqual(files.get("/example/data/public-prices.json.tmp"), withoutCsv);
+  assert.ok(files.has("/example/data/exports/manifest.json.tmp"));
   assert.deepEqual(files.get("/example/data/fx-rates.json.tmp"), rates);
   assert.equal(publications.at(-1)[1], "/example/data/offers.json");
   const index = files.get("/example/data/price-history.json.tmp");
@@ -428,13 +433,13 @@ test("public and account observations, configurations and reserved terms remain 
   Object.assign(result.prices[2], { visible_source: "public", applicable_regions: ["us-test"], applicable_countries: ["US"],
     price_scope: "unlocated_catalog", price_applicability: { scope: "currently_selectable_standard_regions" } });
   const output = normalizeLibraryResult(result);
-  assert.equal(output.offers.length, 11);
-  assert.equal(new Set(output.offers.map((offer) => offer.id)).size, 11);
+  assert.equal(output.offers.length, 12);
+  assert.equal(new Set(output.offers.map((offer) => offer.id)).size, 12);
   assert.deepEqual(output.offers[2].regions, []);
   assert.deepEqual(output.offers[2].computeCountries, []);
   assert.deepEqual(output.offers[2].applicableRegions, ["us-test"]);
-  assert.equal(output.offers[9].sourceConditions.duration, "1-week");
-  assert.equal(output.offers[10].sourceConditions.duration, "4-weeks");
+  assert.equal(output.offers.at(-2).sourceConditions.duration, "1-week");
+  assert.equal(output.offers.at(-1).sourceConditions.duration, "4-weeks");
 });
 
 

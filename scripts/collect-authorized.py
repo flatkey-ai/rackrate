@@ -1,7 +1,7 @@
 """Cloud-only orchestration. Library collectors remain persistence-free.
 
 No browser login, cloud resource creation, renewal or public fallback occurs here.
-Only this allowlisted nine-provider plan is accepted; credentials never enter output.
+Only this allowlisted ten-provider plan is accepted; credentials never enter output.
 """
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda")
-EXTENSION_URLS = {"azure": "https://prices.azure.com/api/retail/prices", "digitalocean": "https://docs.digitalocean.com/products/droplets/details/pricing/", "verda": "https://verda.com/pricing"}
+PROVIDERS = ("nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda", "vast")
+EXTENSION_URLS = {"azure": "https://prices.azure.com/api/retail/prices", "digitalocean": "https://docs.digitalocean.com/products/droplets/details/pricing/", "verda": "https://verda.com/pricing", "vast": "https://cloud.vast.ai/create/"}
 SESSION_INPUTS = {
     "RACKRATE_LAMBDA_STORAGE_STATE_JSON": ("LAMBDA_STORAGE_STATE_PATH", "lambda.json"),
     "RACKRATE_AUTODL_STORAGE_STATE_JSON": ("AUTODL_STORAGE_STATE_PATH", "autodl.json"),
@@ -49,9 +49,9 @@ coverage_countries coverage_location_source coverage_locations coverage_regions 
 documented_vm_configurations api_documentation_url api_endpoint public_url region_access
 source_snapshot_at source_snapshot_basis tax_source_url provider_sku_id
 location_validation catalog_discovery configuration_source configuration_sources storage_estimate
-storage_quote full_configuration_price catalog_metadata_discrepancy api_source_url price_basis_source_url
+storage_quote full_configuration_price catalog_metadata_discrepancy api_source_url price_basis_source_url documentation_url
 """.split())
-NESTED_FIELDS = frozenset(['product_scope', 'purchase_option', 'product_id', 'product_name', 'meter_name', 'meter_id', 'is_primary_meter_region', 'tier_minimum_units', 'region_name_source_url', 'physical_location_source_url', 'archived', 'included_license', 'cpu_count', 'listed_gpu_vram_gb', 'BackupType', 'CPU', 'ChargeType', 'Count', 'CpuPlatform', 'Disks', 'GPU', 'GpuType', 'ImageId', 'IsBoot', 'MachineType', 'Memory', 'Name', 'NetCapability', 'Region', 'RelatedToImageFeature', 'ShowPriceDetails', 'Size', 'Snapshot', 'Type', 'UDisk', 'UHost', 'Zone', 'activity_id', 'aggregation_unit', 'aggregation_units', 'allocation_scope', 'amount', 'api_and_product_pages', 'api_gpu_memory_gb', 'architecture', 'attachMode', 'basis', 'billing_increment', 'block_storage_network_description', 'bootDisk', 'boot_disk_catalog_maximum_gb', 'boot_disk_catalog_minimum_gb', 'boot_disk_gib', 'boot_disk_minimum_basis', 'boot_disk_size_gb', 'boot_disk_type', 'breakdown', 'capacity_type', 'catalog_options', 'cents_formatter_source_url', 'cloud_tier', 'cloud_type', 'rate_type', 'quote_request', 'dataCenterId', 'gpuCount', 'secureCloud', 'minimum_ram_gb', 'minimum_vcpus', 'stock_status', 'data_center_id', 'location', 'cluster_gpu_count', 'cluster_gpu_count_relation', 'cluster_type.price_cents_per_gpu_hour', 'cluster_type.price_cents_per_hour', 'cluster_type.worker_instance_type.price_cents_per_hour', 'components', 'configuration_scope', 'conversion', 'cost_type', 'country_basis', 'country_code', 'country_description', 'country_field_provided_by_api', 'country_mapping_basis', 'country_name', 'country_name_zh', 'country_source', 'country_status', 'coverage_countries', 'coverage_locations', 'coverage_regions', 'coverage_zones', 'cpu', 'cpu_cores_per_gpu', 'cpu_description', 'cpu_platform', 'cpu_range', 'currency', 'currency_basis', 'data_center', 'decimal_places', 'dedicated', 'dedicated_exclusion_basis', 'description', 'details', 'directory_observed_at', 'directory_sha256', 'disk_type', 'disks', 'documentation_discrepancy', 'documentation_url', 'documentation_verified_on', 'documented_gpu_memory_gb', 'does_not_establish', 'duration', 'duration_unit', 'duration_unverified', 'eligibility_verified', 'energy_profile', 'ephemeral_disk_description', 'evidence', 'excluded_dedicated_locations', 'explanation', 'extra_data_disks', 'field', 'final_checkout_verified', 'formula', 'fresh_platform_and_preset_verified', 'frontend_source_url', 'gpu_count', 'gpu_description', 'gpu_model', 'gpu_variant', 'gpu_vendor', 'gpus', 'gpus_per_worker', 'hourly_sku_type', 'identity_basis', 'identity_evidence', 'image_features', 'image_home_zone', 'image_id', 'image_license_price_verified', 'image_name', 'image_selection_basis', 'image_size_gb', 'image_supported_gpu_types', 'image_type', 'included_in_main_gpu_price', 'independent_provider_quote', 'independent_region_quotes', 'independent_regional_quote_count', 'infiniband_network_description', 'label_zh', 'location_basis', 'location_source_url', 'location_status', 'locations', 'managedDisk', 'maximum', 'membership_required', 'memory_gb', 'memory_gib', 'memory_mb', 'memory_per_gpu', 'method', 'minimum', 'mode', 'name', 'native_amount_milli_cny', 'native_currency', 'nested_boot_disk_independently_itemized', 'net_capability', 'normalization', 'notes', 'num_workers', 'observed_at', 'offer_types', 'onDemand', 'only_new_users', 'orderability_verified', 'ordinary_field', 'original_amount', 'original_details', 'os_name', 'os_type', 'per_gpu_amount', 'per_gpu_unit', 'platform', 'platform_catalog_url', 'preset', 'price_applicability_verified', 'price_display_basis', 'pricing_policy_url', 'pricing_terms_unverified', 'pricing_tier', 'private_region', 'project_region_source_url', 'project_region_verified', 'provider', 'public_network_included', 'purchase_limit', 'quantity', 'ram_gb', 'ram_gb_range', 'raw_sku', 'reason', 'record_type', 'region', 'region_field', 'region_name', 'region_name_zh', 'region_sign', 'regions_url', 'required_image_features', 'reservation_term', 'resource_index', 'resource_scope', 'resource_specs', 'resource_type', 'resources', 'reviewed_sha256', 'reviewed_source_url', 'rounded_amount', 'rounding', 'runtime_version_check', 'sales_contact_required', 'scope', 'selection_basis', 'selection_source_url', 'sha256', 'sizeGibibytes', 'size_gib', 'sku_costs', 'sku_id', 'source_field', 'source_label', 'source_sha256', 'source_type', 'source_unit', 'source_url', 'source_urls', 'spec', 'status', 'stock_verified', 'storage', 'storage_gib', 'storage_sku_disjoint', 'title', 'type', 'types_url', 'uniform_price_verified', 'unit', 'url', 'value', 'vcpu_count', 'vcpus', 'vcpus_range', 'verification_status', 'verified_on', 'vm_types_table', 'vpc_network_description', 'vram_gb', 'worker_instance_type', 'zone', 'zone_name', 'zones_url'])
+NESTED_FIELDS = frozenset(['cpu_name', 'gpu_memory_mb_per_gpu', 'storage_gb', 'raw_location', 'location_granularity', 'uniform_country_price', 'offer_id', 'verification', 'allocated_storage', 'storage_unit', 'storage_unit_caveat', 'gpu_fraction_of_host', 'compute_per_instance_hour_usd', 'storage_per_instance_hour_usd', 'storage_per_gb_month_usd', 'bandwidth_included', 'catalog_coverage', 'product_scope', 'purchase_option', 'product_id', 'product_name', 'meter_name', 'meter_id', 'is_primary_meter_region', 'tier_minimum_units', 'region_name_source_url', 'physical_location_source_url', 'archived', 'included_license', 'cpu_count', 'listed_gpu_vram_gb', 'BackupType', 'CPU', 'ChargeType', 'Count', 'CpuPlatform', 'Disks', 'GPU', 'GpuType', 'ImageId', 'IsBoot', 'MachineType', 'Memory', 'Name', 'NetCapability', 'Region', 'RelatedToImageFeature', 'ShowPriceDetails', 'Size', 'Snapshot', 'Type', 'UDisk', 'UHost', 'Zone', 'activity_id', 'aggregation_unit', 'aggregation_units', 'allocation_scope', 'amount', 'api_and_product_pages', 'api_gpu_memory_gb', 'architecture', 'attachMode', 'basis', 'billing_increment', 'block_storage_network_description', 'bootDisk', 'boot_disk_catalog_maximum_gb', 'boot_disk_catalog_minimum_gb', 'boot_disk_gib', 'boot_disk_minimum_basis', 'boot_disk_size_gb', 'boot_disk_type', 'breakdown', 'capacity_type', 'catalog_options', 'cents_formatter_source_url', 'cloud_tier', 'cloud_type', 'rate_type', 'quote_request', 'dataCenterId', 'gpuCount', 'secureCloud', 'minimum_ram_gb', 'minimum_vcpus', 'stock_status', 'data_center_id', 'location', 'cluster_gpu_count', 'cluster_gpu_count_relation', 'cluster_type.price_cents_per_gpu_hour', 'cluster_type.price_cents_per_hour', 'cluster_type.worker_instance_type.price_cents_per_hour', 'components', 'configuration_scope', 'conversion', 'cost_type', 'country_basis', 'country_code', 'country_description', 'country_field_provided_by_api', 'country_mapping_basis', 'country_name', 'country_name_zh', 'country_source', 'country_status', 'coverage_countries', 'coverage_locations', 'coverage_regions', 'coverage_zones', 'cpu', 'cpu_cores_per_gpu', 'cpu_description', 'cpu_platform', 'cpu_range', 'currency', 'currency_basis', 'data_center', 'decimal_places', 'dedicated', 'dedicated_exclusion_basis', 'description', 'details', 'directory_observed_at', 'directory_sha256', 'disk_type', 'disks', 'documentation_discrepancy', 'documentation_url', 'documentation_verified_on', 'documented_gpu_memory_gb', 'does_not_establish', 'duration', 'duration_unit', 'duration_unverified', 'eligibility_verified', 'energy_profile', 'ephemeral_disk_description', 'evidence', 'excluded_dedicated_locations', 'explanation', 'extra_data_disks', 'field', 'final_checkout_verified', 'formula', 'fresh_platform_and_preset_verified', 'frontend_source_url', 'gpu_count', 'gpu_description', 'gpu_model', 'gpu_variant', 'gpu_vendor', 'gpus', 'gpus_per_worker', 'hourly_sku_type', 'identity_basis', 'identity_evidence', 'image_features', 'image_home_zone', 'image_id', 'image_license_price_verified', 'image_name', 'image_selection_basis', 'image_size_gb', 'image_supported_gpu_types', 'image_type', 'included_in_main_gpu_price', 'independent_provider_quote', 'independent_region_quotes', 'independent_regional_quote_count', 'infiniband_network_description', 'label_zh', 'location_basis', 'location_source_url', 'location_status', 'locations', 'managedDisk', 'maximum', 'membership_required', 'memory_gb', 'memory_gib', 'memory_mb', 'memory_per_gpu', 'method', 'minimum', 'mode', 'name', 'native_amount_milli_cny', 'native_currency', 'nested_boot_disk_independently_itemized', 'net_capability', 'normalization', 'notes', 'num_workers', 'observed_at', 'offer_types', 'onDemand', 'only_new_users', 'orderability_verified', 'ordinary_field', 'original_amount', 'original_details', 'os_name', 'os_type', 'per_gpu_amount', 'per_gpu_unit', 'platform', 'platform_catalog_url', 'preset', 'price_applicability_verified', 'price_display_basis', 'pricing_policy_url', 'pricing_terms_unverified', 'pricing_tier', 'private_region', 'project_region_source_url', 'project_region_verified', 'provider', 'public_network_included', 'purchase_limit', 'quantity', 'ram_gb', 'ram_gb_range', 'raw_sku', 'reason', 'record_type', 'region', 'region_field', 'region_name', 'region_name_zh', 'region_sign', 'regions_url', 'required_image_features', 'reservation_term', 'resource_index', 'resource_scope', 'resource_specs', 'resource_type', 'resources', 'reviewed_sha256', 'reviewed_source_url', 'rounded_amount', 'rounding', 'runtime_version_check', 'sales_contact_required', 'scope', 'selection_basis', 'selection_source_url', 'sha256', 'sizeGibibytes', 'size_gib', 'sku_costs', 'sku_id', 'source_field', 'source_label', 'source_sha256', 'source_type', 'source_unit', 'source_url', 'source_urls', 'spec', 'status', 'stock_verified', 'storage', 'storage_gib', 'storage_sku_disjoint', 'title', 'type', 'types_url', 'uniform_price_verified', 'unit', 'url', 'value', 'vcpu_count', 'vcpus', 'vcpus_range', 'verification_status', 'verified_on', 'vm_types_table', 'vpc_network_description', 'vram_gb', 'worker_instance_type', 'zone', 'zone_name', 'zones_url'])
 PRIVATE_KEY = re.compile(r"(?:password|secret|token|cookie|authorization|session|credential|email|tenant_id|project_id|project_reference|organization_id|account_id|account_name|user_id|user_name|request_id)", re.I)
 SAFE_NEBIUS_GAPS = {
     ("documented_public_region", "no_accessible_project"),
@@ -74,7 +74,7 @@ SAFE_DIAGNOSTIC_CODES = frozenset({
     "oidc_access_token_invalid", "oidc_exchange_failed",
 })
 SAFE_DIAGNOSTIC_STAGES = frozenset({"library", "credentials", "publication", "oidc_configuration", "oidc_github_identity",
-                                  "oidc_exchange", "nebius_public", "nebius_account", "lambda", "crusoe", "autodl", "ucloud", "runpod", "azure", "digitalocean", "verda"})
+                                  "oidc_exchange", "nebius_public", "nebius_account", "lambda", "crusoe", "autodl", "ucloud", "runpod", "azure", "digitalocean", "verda", "vast"})
 
 
 def fail(code):
@@ -200,6 +200,18 @@ def accepted_source(source, selection):
         fail("source_incomplete")
     if source.get("status") == "success" and not source.get("error"):
         return []
+    if selection == "vast" and source.get("status") == "partial":
+        coverage = source.get("catalog_coverage", {})
+        errors = source.get("source_errors", [])
+        if (source.get("error", {}).get("code") != "partial_collection"
+                or not errors or any(item.get("code") != "incomplete_catalog" for item in errors)
+                or coverage.get("scope") != "bounded_verified_rentable_on_demand_offer_search"
+                or coverage.get("complete") is not False or coverage.get("status") != "partial"
+                or coverage.get("request_count") != 1 or coverage.get("request_limit") != 1000
+                or coverage.get("quote_count") != source.get("returned_count")
+                or coverage.get("marketplace_total") is not None):
+            fail("source_incomplete")
+        return [{"scope": "bounded_marketplace_search", "status": "complete_marketplace_not_verified"}]
     # The API enumerates only readable projects. Absent projects and a zero
     # compute tariff are explicit visibility/price absence, not stale fallbacks.
     # Preserve partial status and every limitation in the published envelope.
@@ -245,6 +257,20 @@ def public_runpod_coverage(source, rows):
                                   "country_unverified_data_centers": exclusions}}
 
 
+def public_vast_coverage(source, rows):
+    value = source.get("catalog_coverage", {})
+    counts = ("source_offer_count", "quote_count", "excluded_count", "region_bound_quote_count", "country_only_quote_count")
+    if (any(type(value.get(key)) is not int or value[key] < 0 for key in counts)
+            or value["source_offer_count"] != value["quote_count"] + value["excluded_count"]
+            or value["quote_count"] != len(rows)
+            or value["region_bound_quote_count"] + value["country_only_quote_count"] != len(rows)
+            or value["source_offer_count"] > 1000):
+        fail("source_coverage_mismatch")
+    return {"catalog_coverage": {"scope": "bounded_verified_rentable_on_demand_offer_search", "complete": False,
+        "request_limit": 1000, "request_count": 1, "marketplace_total": None,
+        **{key: value[key] for key in counts}}}
+
+
 def collect_authorized(env, *, Settings, collect_prices, report_coverage, version, expected_version):
     if version != expected_version:
         fail("collector_version_mismatch")
@@ -287,6 +313,7 @@ def collect_authorized(env, *, Settings, collect_prices, report_coverage, versio
                         "observed_at": source["observed_at"], "returned_count": len(rows),
                         "limitations": limitations,
                         **(public_runpod_coverage(source, rows) if provider == "runpod" else {}),
+                        **(public_vast_coverage(source, rows) if provider == "vast" else {}),
                     })
                     prices.extend(source_prices)
             except Exception:
@@ -341,10 +368,12 @@ def main():
     try:
         # Discard unexpected library/network debug output, even on exceptions.
         with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
-            from gpu_price_monitor import Settings, __version__, collect_prices
+            from gpu_price_monitor import Settings, __version__, collect_prices, prices_to_provider_csvs, provider_csv_coverage
             from gpu_price_monitor.coverage import report_coverage
             result = collect_authorized(env, Settings=Settings, collect_prices=collect_prices,
                                         report_coverage=report_coverage, version=__version__, expected_version=sys.argv[1])
+            result["provider_exports"] = {"schema_version": 1, "tables": prices_to_provider_csvs(result),
+                                          "coverage": provider_csv_coverage(result)}
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
     except BaseException as error:
         print("RACKRATE_DIAGNOSTIC " + json.dumps(safe_diagnostic(error), separators=(",", ":")), file=sys.stderr)

@@ -1,0 +1,252 @@
+{
+  "description": "Three unchanged concrete offers from the 2026-10-23 live anonymous Vast.ai collection. This is a bounded sample, not complete marketplace coverage.",
+  "source_file": "work/vast-integrated-2026-10-23/prices.json",
+  "collected_at": "2026-10-23T07:48:34.658552+00:00",
+  "status": "partial",
+  "prices": [
+    {
+      "provider": "vast",
+      "product_type": "gpu_container",
+      "gpu_model": "RTX 5060 TI",
+      "gpu_vendor": "NVIDIA",
+      "gpu_variant": null,
+      "raw_name": "RTX 5060 Ti",
+      "raw_sku": "40931299",
+      "gpu_count": 1,
+      "vram_gb": 8.151,
+      "amount": "0.13762962962962963",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "quote_status": "quoted",
+      "price_basis": "instance_total_allocated",
+      "instance_price": {
+        "amount": "0.13762962962962963",
+        "currency": "USD",
+        "unit": "instance_hour"
+      },
+      "resources": {
+        "vcpus": 6,
+        "cpu_name": "AMD Ryzen 5 5500",
+        "memory_gb": 15.939,
+        "memory_mb": "15939",
+        "gpu_memory_mb_per_gpu": "8151",
+        "storage_gb": 8
+      },
+      "regions": [
+        "Virginia, US"
+      ],
+      "zones": [],
+      "compute_countries": [
+        "US"
+      ],
+      "geographic_scope": "offer_location",
+      "price_scope": "regional_quote",
+      "region_price_verified": true,
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "availability": "available",
+      "observed_at": "2026-10-23T07:48:32.317447+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://console.vast.ai/api/v0/bundles",
+      "source_type": "official_public_api",
+      "pricing_page_url": "https://cloud.vast.ai/create/",
+      "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+      "location_source": {
+        "source_url": "https://console.vast.ai/api/v0/bundles",
+        "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+        "basis": "offer_geolocation",
+        "field": "geolocation",
+        "raw_location": "Virginia, US",
+        "country_code": "US",
+        "location_granularity": "subdivision",
+        "uniform_country_price": false
+      },
+      "conditions": {
+        "offer_id": 40931299,
+        "rate_type": "concrete_offer",
+        "verification": "verified",
+        "allocated_storage": 8,
+        "storage_unit": "GB_as_documented_by_API",
+        "storage_unit_caveat": "API documentation says GB; CLI help says GiB. The request value is used unchanged.",
+        "gpu_fraction_of_host": "0.5",
+        "compute_per_instance_hour_usd": "0.13733333333333334",
+        "storage_per_instance_hour_usd": "0.0002962962962962963",
+        "storage_per_gb_month_usd": "0.02666666666666667",
+        "bandwidth_included": false,
+        "catalog_coverage": "partial"
+      },
+      "notes": [
+        "A concrete verified, rentable on-demand GPU offer, including the explicitly requested 8-unit storage allocation; no resource was created.",
+        "The API's dph_total is the complete selected offer hourly rate before additional bandwidth and unspecified taxes; divided by num_gpus for GPU-hour comparison.",
+        "GPU fraction describes this offer's share of the host GPU count, not a fraction of a GPU; CPU/RAM are the offer allocations.",
+        "Location is exactly the offer's declared geolocation. It may identify only a country; it is not an availability zone or a nationwide-uniform price.",
+        "RAM/VRAM are source-reported MB divided by 1000 for GB display, not nominal model specifications.",
+        "Bounded anonymous search; complete marketplace coverage and checkout availability were not established."
+      ]
+    },
+    {
+      "provider": "vast",
+      "product_type": "gpu_container",
+      "gpu_model": "RTX 4070",
+      "gpu_vendor": "NVIDIA",
+      "gpu_variant": null,
+      "raw_name": "RTX 4070",
+      "raw_sku": "18976364",
+      "gpu_count": 1,
+      "vram_gb": 12.282,
+      "amount": "0.19703703703703704",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "quote_status": "quoted",
+      "price_basis": "instance_total_allocated",
+      "instance_price": {
+        "amount": "0.19703703703703704",
+        "currency": "USD",
+        "unit": "instance_hour"
+      },
+      "resources": {
+        "vcpus": 18,
+        "cpu_name": "Xeon® E5-2695 v4",
+        "memory_gb": 15.962,
+        "memory_mb": "15962",
+        "gpu_memory_mb_per_gpu": "12282",
+        "storage_gb": 8
+      },
+      "regions": [
+        "Quebec, CA"
+      ],
+      "zones": [],
+      "compute_countries": [
+        "CA"
+      ],
+      "geographic_scope": "offer_location",
+      "price_scope": "regional_quote",
+      "region_price_verified": true,
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "availability": "available",
+      "observed_at": "2026-10-23T07:48:32.317447+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://console.vast.ai/api/v0/bundles",
+      "source_type": "official_public_api",
+      "pricing_page_url": "https://cloud.vast.ai/create/",
+      "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+      "location_source": {
+        "source_url": "https://console.vast.ai/api/v0/bundles",
+        "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+        "basis": "offer_geolocation",
+        "field": "geolocation",
+        "raw_location": "Quebec, CA",
+        "country_code": "CA",
+        "location_granularity": "subdivision",
+        "uniform_country_price": false
+      },
+      "conditions": {
+        "offer_id": 18976364,
+        "rate_type": "concrete_offer",
+        "verification": "verified",
+        "allocated_storage": 8,
+        "storage_unit": "GB_as_documented_by_API",
+        "storage_unit_caveat": "API documentation says GB; CLI help says GiB. The request value is used unchanged.",
+        "gpu_fraction_of_host": "0.5",
+        "compute_per_instance_hour_usd": "0.18666666666666668",
+        "storage_per_instance_hour_usd": "0.010370370370370372",
+        "storage_per_gb_month_usd": "0.9333333333333335",
+        "bandwidth_included": false,
+        "catalog_coverage": "partial"
+      },
+      "notes": [
+        "A concrete verified, rentable on-demand GPU offer, including the explicitly requested 8-unit storage allocation; no resource was created.",
+        "The API's dph_total is the complete selected offer hourly rate before additional bandwidth and unspecified taxes; divided by num_gpus for GPU-hour comparison.",
+        "GPU fraction describes this offer's share of the host GPU count, not a fraction of a GPU; CPU/RAM are the offer allocations.",
+        "Location is exactly the offer's declared geolocation. It may identify only a country; it is not an availability zone or a nationwide-uniform price.",
+        "RAM/VRAM are source-reported MB divided by 1000 for GB display, not nominal model specifications.",
+        "Bounded anonymous search; complete marketplace coverage and checkout availability were not established."
+      ]
+    },
+    {
+      "provider": "vast",
+      "product_type": "gpu_container",
+      "gpu_model": "RTX A5000",
+      "gpu_vendor": "NVIDIA",
+      "gpu_variant": null,
+      "raw_name": "RTX A5000",
+      "raw_sku": "9817739",
+      "gpu_count": 2,
+      "vram_gb": 24.564,
+      "amount": "0.2314962962962963",
+      "currency": "USD",
+      "unit": "gpu_hour",
+      "billing_mode": "on_demand",
+      "quote_status": "quoted",
+      "price_basis": "instance_total_allocated",
+      "instance_price": {
+        "amount": "0.4629925925925926",
+        "currency": "USD",
+        "unit": "instance_hour"
+      },
+      "resources": {
+        "vcpus": 12.8,
+        "cpu_name": "AMD Ryzen Threadripper PRO 3955WX 16-Cores",
+        "memory_gb": 206.24,
+        "memory_mb": "206240",
+        "gpu_memory_mb_per_gpu": "24564",
+        "storage_gb": 8
+      },
+      "regions": [],
+      "zones": [],
+      "compute_countries": [
+        "IE"
+      ],
+      "geographic_scope": "offer_country",
+      "price_scope": "country_quote",
+      "region_price_verified": false,
+      "account_scope": "public_catalog",
+      "tax_scope": "unspecified",
+      "availability": "available",
+      "observed_at": "2026-10-23T07:48:32.317447+00:00",
+      "effective_from": null,
+      "effective_until": null,
+      "source_url": "https://console.vast.ai/api/v0/bundles",
+      "source_type": "official_public_api",
+      "pricing_page_url": "https://cloud.vast.ai/create/",
+      "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+      "location_source": {
+        "source_url": "https://console.vast.ai/api/v0/bundles",
+        "documentation_url": "https://docs.vast.ai/api-reference/search/search-offers",
+        "basis": "offer_geolocation",
+        "field": "geolocation",
+        "raw_location": "Ireland, IE",
+        "country_code": "IE",
+        "location_granularity": "country",
+        "uniform_country_price": false
+      },
+      "conditions": {
+        "offer_id": 9817739,
+        "rate_type": "concrete_offer",
+        "verification": "verified",
+        "allocated_storage": 8,
+        "storage_unit": "GB_as_documented_by_API",
+        "storage_unit_caveat": "API documentation says GB; CLI help says GiB. The request value is used unchanged.",
+        "gpu_fraction_of_host": "0.4",
+        "compute_per_instance_hour_usd": "0.4613333333333334",
+        "storage_per_instance_hour_usd": "0.0016592592592592594",
+        "storage_per_gb_month_usd": "0.14933333333333335",
+        "bandwidth_included": false,
+        "catalog_coverage": "partial"
+      },
+      "notes": [
+        "A concrete verified, rentable on-demand GPU offer, including the explicitly requested 8-unit storage allocation; no resource was created.",
+        "The API's dph_total is the complete selected offer hourly rate before additional bandwidth and unspecified taxes; divided by num_gpus for GPU-hour comparison.",
+        "GPU fraction describes this offer's share of the host GPU count, not a fraction of a GPU; CPU/RAM are the offer allocations.",
+        "Location is exactly the offer's declared geolocation. It may identify only a country; it is not an availability zone or a nationwide-uniform price.",
+        "RAM/VRAM are source-reported MB divided by 1000 for GB display, not nominal model specifications.",
+        "Bounded anonymous search; complete marketplace coverage and checkout availability were not established."
+      ]
+    }
+  ]
+}

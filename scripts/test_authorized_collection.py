@@ -103,7 +103,7 @@ class BridgeTests(unittest.TestCase):
             return result_fixture(providers[0])
         result = self.run_bridge(collect)
         self.assertEqual(len(result["prices"]), 10)
-        self.assertEqual(len(result["provider_results"]), 9)
+        self.assertEqual(len(result["provider_results"]), 10)
         self.assertEqual(calls[0], ("nebius", "public", "api_preferred", "standard"))
         self.assertEqual(calls[1][1], "catalog_api")
         self.assertEqual(result["prices"][0]["observed_at"], NOW)
@@ -237,7 +237,7 @@ class BridgeTests(unittest.TestCase):
             return result_fixture(providers[0])
         output = bridge.collect_authorized(values, Settings=Settings, collect_prices=collect,
             report_coverage=lambda result: {"collection_status": result["status"]}, version="0.23.0", expected_version="0.23.0")
-        self.assertEqual(len(calls), 9)
+        self.assertEqual(len(calls), 10)
         self.assertEqual([source for provider, source in calls if provider == "nebius"], ["public"])
         self.assertEqual(output["status"], "partial")
         nebius = output["provider_results"][0]
@@ -272,6 +272,34 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(source["error"], {"code": "extension_source_failed"})
         self.assertNotIn("synthetic-secret", json.dumps(result))
 
+
+
+    def test_bounded_vast_search_keeps_partial_status_and_verified_geography_counts(self):
+        def collect(providers, **_):
+            result = result_fixture(providers[0])
+            if providers[0] == "vast":
+                result["provider_results"][0].update(status="partial", error={"code": "partial_collection"},
+                    source_errors=[{"code": "incomplete_catalog"}], catalog_coverage={
+                        "scope": "bounded_verified_rentable_on_demand_offer_search", "complete": False,
+                        "status": "partial", "request_count": 1, "request_limit": 1000, "marketplace_total": None,
+                        "source_offer_count": 2, "quote_count": 1, "excluded_count": 1,
+                        "region_bound_quote_count": 0, "country_only_quote_count": 1})
+            return result
+        result = self.run_bridge(collect)
+        vast = next(item for item in result["provider_results"] if item["provider"] == "vast")
+        self.assertEqual(vast["status"], "partial")
+        self.assertEqual(vast["returned_count"], 1)
+        observation = vast["source_observations"][0]
+        self.assertFalse(observation["catalog_coverage"]["complete"])
+        self.assertEqual(observation["catalog_coverage"]["country_only_quote_count"], 1)
+        self.assertEqual(observation["limitations"], [{"scope": "bounded_marketplace_search", "status": "complete_marketplace_not_verified"}])
+        def invalid(providers, **kwargs):
+            result = collect(providers, **kwargs)
+            if providers[0] == "vast": result["provider_results"][0]["catalog_coverage"]["excluded_count"] = 0
+            return result
+        bad = self.run_bridge(invalid)
+        self.assertEqual(next(item for item in bad["provider_results"] if item["provider"] == "vast")["status"], "failed")
+        self.assertFalse(any(item["provider"] == "vast" for item in bad["prices"]))
 
 if __name__ == "__main__":
     unittest.main()

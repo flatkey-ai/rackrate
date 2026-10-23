@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { convertAmountToUsd } from "./fx.mjs";
 
 const execFile = promisify(execFileCallback);
-export const LIBRARY_VERSION = "0.23.0";
-export const LIBRARY_COMMIT = "6cb76c04c764ce91b8cf0f70b6c35900dbf00006";
+export const LIBRARY_VERSION = "0.24.0";
+export const LIBRARY_COMMIT = "d9406e4f80febac332a25899ef1b390adb832576";
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTHON, root = repositoryRoot, exists = existsSync } = {}) {
   if (explicit) return explicit;
@@ -18,9 +18,9 @@ export function collectionPython({ explicit = process.env.GPU_PRICE_MONITOR_PYTH
   return candidates.find((candidate) => exists(candidate)) ?? "python3";
 }
 export const REQUIRED_PROVIDERS = Object.freeze([
-  "nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda",
+  "nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda", "vast",
 ]);
-export const EXTENSION_PROVIDERS = Object.freeze(["azure", "digitalocean", "verda"]);
+export const EXTENSION_PROVIDERS = Object.freeze(["azure", "digitalocean", "verda", "vast"]);
 
 const PROVIDERS = {
   nebius: ["Nebius", "GPU cloud", "https://nebius.com"],
@@ -32,16 +32,18 @@ const PROVIDERS = {
   azure: ["Microsoft Azure", "Hyperscaler", "https://azure.microsoft.com"],
   digitalocean: ["DigitalOcean", "Cloud", "https://www.digitalocean.com"],
   verda: ["Verda", "GPU cloud", "https://verda.com"],
+  vast: ["Vast.ai", "Marketplace", "https://vast.ai"],
 };
 
 // Settings() deliberately bypasses .env and credentials inherited by this process.
 // The library owns collection only; RackRate owns persistence and publication.
 export const PYTHON_COLLECTION_CODE = `
 import json
-from gpu_price_monitor import Settings, __version__, collect_prices
+from gpu_price_monitor import Settings, __version__, collect_prices, prices_to_provider_csvs, provider_csv_coverage
 if __version__ != "${LIBRARY_VERSION}":
     raise RuntimeError("Install requirements-collector.txt before refreshing RackRate")
 result = collect_prices(${JSON.stringify(REQUIRED_PROVIDERS)}, settings=Settings(), include_coverage=True)
+result["provider_exports"] = {"schema_version": 1, "tables": prices_to_provider_csvs(result), "coverage": provider_csv_coverage(result)}
 print(json.dumps(result, ensure_ascii=False, allow_nan=False))
 `;
 
@@ -87,7 +89,7 @@ const DIAGNOSTIC_CODES = new Set([
   "oidc_access_token_invalid", "oidc_exchange_failed",
 ]);
 const DIAGNOSTIC_STAGES = new Set(["library", "credentials", "publication", "oidc_configuration", "oidc_github_identity",
-  "oidc_exchange", "nebius_public", "nebius_account", "lambda", "crusoe", "autodl", "ucloud", "runpod", "azure", "digitalocean", "verda"]);
+  "oidc_exchange", "nebius_public", "nebius_account", "lambda", "crusoe", "autodl", "ucloud", "runpod", "azure", "digitalocean", "verda", "vast"]);
 
 export function authorizedFailureDiagnostic(error) {
   // Never interpolate arbitrary stderr/message/URL. Only an exact, bounded
@@ -172,7 +174,7 @@ function strings(value, label) {
 
 const AUTHORIZED_PLAN = {
   nebius: ["nebius_public", "nebius_account"], crusoe: ["crusoe"],
-  lambda: ["lambda"], ucloud: ["ucloud"], autodl: ["autodl"], runpod: ["runpod"], azure: ["azure"], digitalocean: ["digitalocean"], verda: ["verda"],
+  lambda: ["lambda"], ucloud: ["ucloud"], autodl: ["autodl"], runpod: ["runpod"], azure: ["azure"], digitalocean: ["digitalocean"], verda: ["verda"], vast: ["vast"],
 };
 const SAFE_NEBIUS_LIMITS = new Set([
   "documented_public_region:no_accessible_project",
@@ -201,7 +203,8 @@ export function authorizedSourceVerified(source) {
         || !Number.isFinite(Date.parse(item.observed_at)) || !Array.isArray(item.limitations)) return false;
     if (item.status === "partial") {
       const allowed = item.selection === "nebius_account" ? SAFE_NEBIUS_LIMITS
-        : item.selection === "autodl" ? new Set(["market_region_country:country_not_verified"]) : new Set();
+        : item.selection === "autodl" ? new Set(["market_region_country:country_not_verified"])
+        : item.selection === "vast" ? new Set(["bounded_marketplace_search:complete_marketplace_not_verified"]) : new Set();
       if (!item.limitations.length || item.limitations.some((gap) => !allowed.has(`${gap.scope}:${gap.status}`))) return false;
       partial = true;
     } else if (item.status !== "success" || item.limitations.length) return false;
@@ -374,7 +377,7 @@ export function normalizeLibraryResult(result) {
     const declaredCountries = strings(quote.compute_countries ?? [], "compute countries");
     if (declaredCountries.some((code) => !/^[A-Z]{2}$/.test(code))) throw new Error(`Invalid compute country at ${index}`);
     const countryBoundScope = !quote.price_scope
-      || ["zone_quote", "regional_quote", "requested_zone_quote", "requested_region_quote"].includes(quote.price_scope);
+      || ["zone_quote", "regional_quote", "country_quote", "requested_zone_quote", "requested_region_quote"].includes(quote.price_scope);
     const computeCountries = countryBoundScope ? declaredCountries : [];
     const countryCode = !countryBoundScope ? ""
       : /^[A-Z]{2}$/.test(quote.location?.country_code ?? "") ? quote.location.country_code
@@ -474,7 +477,7 @@ export function validateOffers(offers, { requireUsd = false, rates } = {}) {
 
 export function buildRackRateDataset(_current, libraryResult) {
   const { offers: publicOffers, generatedCatalog } = normalizeLibraryResult(libraryResult);
-  // Only this collection's nine source results define the current dataset.
+  // Only this collection's ten source results define the current dataset.
   // Earlier references remain in dated history; they are never re-observed.
   const offers = publicOffers.sort((a, b) => a.id.localeCompare(b.id));
   validateOffers(offers);

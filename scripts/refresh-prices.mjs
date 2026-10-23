@@ -2,8 +2,9 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planPriceHistory } from "./lib/history-storage.mjs";
-import { buildRackRateDataset, collectLibrary, validateOffers } from "./lib/library.mjs";
+import { buildRackRateDataset, collectLibrary, LIBRARY_VERSION, LIBRARY_COMMIT, REQUIRED_PROVIDERS, validateOffers } from "./lib/library.mjs";
 import { collectFxRates, convertDatasetToUsd } from "./lib/fx.mjs";
+import { planProviderExports } from "./lib/provider-exports.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -20,10 +21,12 @@ export async function refreshPrices({
     read(dataPath, "utf8").then(JSON.parse), read(historyPath, "utf8").then(JSON.parse),
   ]);
   // A rejected source, malformed price or duplicate ID aborts before any write.
-  const [rawResult, rates] = await Promise.all([collect(), collectRates()]);
+  const [collected, rates] = await Promise.all([collect(), collectRates()]);
+  const { provider_exports: _providerExports, ...rawResult } = collected;
   const nativeOutput = buildRackRateDataset(current, rawResult);
   const output = convertDatasetToUsd(nativeOutput, rates);
   validateOffers(output.offers, { requireUsd: true, rates });
+  const exports = planProviderExports(collected, rates, REQUIRED_PROVIDERS, { name: "gpu-price-monitor", version: LIBRARY_VERSION, commit: LIBRARY_COMMIT });
   const history = await planPriceHistory(currentHistory, output, {
     readShard: (relativePath) => read(join(directory, "data", relativePath), "utf8"),
   });
@@ -38,17 +41,25 @@ export async function refreshPrices({
     if (Buffer.byteLength(contents) > maximum) throw new Error("Pricing publication exceeds the reviewed file limit; existing data was preserved");
     return [path, contents];
   });
+  // Stage provider tables before the offers publication marker. The raw quote
+  // snapshot keeps all original observations but never duplicates CSV strings.
+  const exportWrites = exports.writes.map(({ path, contents }) => [join(directory, "data", path), contents]);
+  for (const [, contents] of exportWrites) if (Buffer.byteLength(contents) > 32 * 1024 * 1024) {
+    throw new Error("Provider CSV publication exceeds the reviewed file limit; existing data was preserved");
+  }
+  serialized.splice(serialized.length - 1, 0, ...exportWrites);
   try {
     if (history.writes.length) await makeDirectory(join(directory, "data", "price-history"), { recursive: true });
+    await makeDirectory(join(directory, "data", "exports"), { recursive: true });
     for (const [path, contents] of serialized) {
       await write(`${path}.tmp`, contents);
     }
     // offers.json is the publication marker: replace it after provenance/history exist.
-    for (const [path] of pending) await move(`${path}.tmp`, path);
+    for (const [path] of serialized) await move(`${path}.tmp`, path);
     // Only expire old shards after the new index and publication marker exist.
     for (const path of history.deletes) await remove(join(directory, "data", path), { force: true });
   } finally {
-    await Promise.all(pending.map(([path]) => remove(`${path}.tmp`, { force: true })));
+    await Promise.all(serialized.map(([path]) => remove(`${path}.tmp`, { force: true })));
   }
   return output;
 }
