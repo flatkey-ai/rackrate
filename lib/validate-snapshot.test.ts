@@ -3,50 +3,35 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const { validatePricingDataset } = await import(new URL("./validate-snapshot.ts", import.meta.url).href);
-const original = JSON.parse(readFileSync(new URL("../data/offers.json", import.meta.url), "utf8"));
-const observed = Date.parse(original.generatedAt);
-const fresh = () => structuredClone(original);
-const tracked = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
-
-function fiveProviderSnapshot() {
-  const data = fresh();
-  data.collector.providers = [...tracked];
-  data.offers = data.offers.filter((offer: { providerSlug: string; dataStatus: string }) => tracked.includes(offer.providerSlug) && offer.dataStatus === "official-page");
-  data.sources = data.sources.filter((source: { provider: string }) => tracked.includes(source.provider));
-  const indices = new Map<number, number>();
-  data.offers.forEach((offer: { sourceQuoteIndex: number }, index: number) => {
-    indices.set(offer.sourceQuoteIndex, index);
-    offer.sourceQuoteIndex = index;
-  });
-  for (const model of [...data.coverage.models, ...data.coverage.extra_models]) {
-    model.quote_indices = model.quote_indices.filter((index: number) => indices.has(index)).map((index: number) => indices.get(index));
-    model.quote_count = model.quote_indices.length;
-  }
-  data.coverage.totals.returned_quotes = data.coverage.totals.considered_quotes = data.offers.length;
-  data.coverage.source_summary.requested_count = data.coverage.source_summary.success_count = tracked.length;
-  const gpuSlugs = new Set(data.offers.map((offer: { gpuSlug: string }) => offer.gpuSlug));
-  data.generatedCatalog.gpus = data.generatedCatalog.gpus.filter((gpu: { slug: string }) => gpuSlugs.has(gpu.slug));
-  data.generatedCatalog.providers = data.generatedCatalog.providers.filter((provider: { slug: string }) => tracked.includes(provider.slug));
-  return data;
-}
+// Mutation tests use seven real observations from the immutable 2026-10-21
+// public snapshot (collector 0.7.0). Only catalog/count/coverage bookkeeping and
+// unused FX currencies were reduced; prices, provenance and terms are unchanged.
+// Keep this separate from daily data, which need not contain monthly/offline rows.
+const fixture = JSON.parse(readFileSync(new URL("./fixtures/compact-public-snapshot.json", import.meta.url), "utf8"));
+const observed = Date.parse(fixture.generatedAt);
+const fresh = () => structuredClone(fixture);
+// The fixed fixture deliberately represents the pre-0.23 five-provider public
+// profile. Authorized and nine-provider cases add their own explicit metadata.
+const fiveProviderSnapshot = fresh;
 
 test("real published snapshot validates without changing any price or object identity", () => {
-  const input = fresh();
+  const input = JSON.parse(readFileSync(new URL("../data/offers.json", import.meta.url), "utf8"));
   const before = JSON.stringify(input);
-  assert.equal(validatePricingDataset(input, observed), input);
+  const count = input.offers.length;
+  assert.equal(validatePricingDataset(input, Date.parse(input.generatedAt)), input);
   assert.equal(JSON.stringify(input), before);
-  assert.equal(input.offers.length, original.offers.length);
+  assert.equal(input.offers.length, count);
 });
 
 test("an old fallback remains valid against the FX date at its own collection time", () => {
-  assert.equal(validatePricingDataset(original, observed + 30 * 86_400_000), original);
+  assert.equal(validatePricingDataset(fixture, observed + 30 * 86_400_000), fixture);
   const input = fresh();
   input.fx.rateDate = "2026-10-01";
   assert.throws(() => validatePricingDataset(input, observed), /FX age at collection/);
 });
 
 test("missing, failed, duplicated and miscounted public sources cannot replace a snapshot", () => {
-  const mutations: Array<(data: typeof original) => void> = [
+  const mutations: Array<(data: typeof fixture) => void> = [
     (data) => { data.sources = data.sources.filter((entry: { provider: string }) => entry.provider !== "ucloud"); },
     (data) => { data.sources.find((entry: { provider: string }) => entry.provider === "autodl").status = "failed"; },
     (data) => { data.sources.push(structuredClone(data.sources[1])); },
@@ -65,12 +50,12 @@ test("an explicit five-provider snapshot validates and excludes every discontinu
   assert.equal(validatePricingDataset(data, observed), data);
   assert.equal(JSON.stringify(data), before);
   for (const mutate of [
-    (value: typeof original) => { value.collector.providers.push("runpod"); },
-    (value: typeof original) => { value.collector.providers[0] = "runpod"; },
-    (value: typeof original) => { value.collector.providers[0] = value.collector.providers[1]; },
-    (value: typeof original) => { value.generatedCatalog.providers.push({ slug: "hyperstack", name: "Hyperstack", website: "https://example.com" }); },
-    (value: typeof original) => { value.offers[0].dataStatus = "seed"; },
-    (value: typeof original) => { value.sources.push({ provider: "reference", status: "reference", url: "https://example.com", offerCount: 0 }); },
+    (value: typeof fixture) => { value.collector.providers.push("runpod"); },
+    (value: typeof fixture) => { value.collector.providers[0] = "runpod"; },
+    (value: typeof fixture) => { value.collector.providers[0] = value.collector.providers[1]; },
+    (value: typeof fixture) => { value.generatedCatalog.providers.push({ slug: "hyperstack", name: "Hyperstack", website: "https://example.com" }); },
+    (value: typeof fixture) => { value.offers[0].dataStatus = "seed"; },
+    (value: typeof fixture) => { value.sources.push({ provider: "reference", status: "reference", url: "https://example.com", offerCount: 0 }); },
   ]) {
     const invalid = fiveProviderSnapshot(); mutate(invalid);
     assert.throws(() => validatePricingDataset(invalid, observed));
@@ -128,7 +113,7 @@ test("location provenance cannot turn platform coverage into a verified country 
 });
 
 test("bad collector identities, schema versions and future or invalid timestamps fail", () => {
-  const mutations: Array<(data: typeof original) => void> = [
+  const mutations: Array<(data: typeof fixture) => void> = [
     (data) => { data.schemaVersion = 1; },
     (data) => { data.collector.mode = "authenticated"; },
     (data) => { data.collector.commit = "latest"; },
@@ -143,7 +128,7 @@ test("bad collector identities, schema versions and future or invalid timestamps
 });
 
 test("unknown references, duplicate IDs and invalid catalog URLs are rejected", () => {
-  const mutations: Array<(data: typeof original) => void> = [
+  const mutations: Array<(data: typeof fixture) => void> = [
     (data) => { data.offers[0].gpuSlug = "nvidia-made-up"; },
     (data) => { data.offers[0].providerSlug = "unknown-cloud"; },
     (data) => { data.offers[0].id = data.offers[1].id; },
@@ -170,7 +155,7 @@ test("monthly original and USD amounts cannot be misrepresented as hourly", () =
 });
 
 test("source decimals, dollar amounts, nulls and exchange-rate provenance must agree", () => {
-  const mutations: Array<(data: typeof original) => void> = [
+  const mutations: Array<(data: typeof fixture) => void> = [
     (data) => { data.offers[0].pricePerGpuUnit = Infinity; },
     (data) => { data.offers[0].sourceAmount = "999"; },
     (data) => { data.offers[0].priceUsdPerGpuUnit += .01; },
@@ -188,7 +173,7 @@ test("source decimals, dollar amounts, nulls and exchange-rate provenance must a
 });
 
 test("arrays, source links, offline status and coverage references are validated", () => {
-  const mutations: Array<(data: typeof original) => void> = [
+  const mutations: Array<(data: typeof fixture) => void> = [
     (data) => { data.offers[0].conditions = "member only"; },
     (data) => { data.offers.find((entry: { dataStatus: string }) => entry.dataStatus === "official-page").regions = [42]; },
     (data) => { data.offers[0].sourceUrl = "file:///tmp/prices"; },
@@ -290,4 +275,15 @@ test("optional expansion failure is validated as zero current quotes and never a
     const changed = structuredClone(data); Object.assign(changed.sources.find((source: { provider: string }) => source.provider === "azure"), change);
     assert.throws(() => validatePricingDataset(changed, observed));
   }
+});
+
+
+test("snapshot accepts bounded high-precision native USD amounts without rounding the source", () => {
+  const input = fresh();
+  const offer = input.offers.find((entry: { sourceCurrency: string; billingUnit: string; sourceAmount: string | null }) => entry.sourceCurrency === "USD" && entry.billingUnit === "GPU-hour" && entry.sourceAmount !== null);
+  const tiny = "0." + "0".repeat(50) + "3".repeat(80);
+  Object.assign(offer, { sourceAmount: tiny, usdSourceAmount: tiny, pricePerGpuUnit: Number(tiny), priceUsdPerGpuUnit: Number(tiny), pricePerGpuHour: Number(tiny) });
+  assert.equal(validatePricingDataset(input, observed), input);
+  offer.sourceAmount = "0." + "3".repeat(161);
+  assert.throws(() => validatePricingDataset(input, observed), /source amount/);
 });

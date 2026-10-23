@@ -54,3 +54,11 @@ test("FX download is anonymous, bounded, and uses the supplied observation time"
   assert.equal(calls,1); assert.equal(result.observedAt,observedAt);
   await assert.rejects(collectFxRates({now:new Date(observedAt),fetchImpl:async()=>new Response("no",{status:503})}),/preserved/);
 });
+
+
+test("bounded native decimals retain 80 significant digits even for tiny divided GPU prices", () => {
+  const tiny = "0." + "0".repeat(50) + "3".repeat(80);
+  assert.equal(convertAmountToUsd(tiny, "USD", rates).decimal, tiny);
+  assert.equal(convertAmountToUsd("0." + "3".repeat(80), "CNY", rates, 6).decimal, "0.049895");
+  for (const value of ["0." + "1".repeat(161), "1".repeat(193)]) assert.throws(() => convertAmountToUsd(value, "USD", rates), /Invalid exact decimal/);
+});

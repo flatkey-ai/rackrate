@@ -1,11 +1,12 @@
 import { cheapestComparableOffer } from "./pricing.ts";
 import { isRegionSpecificPrice, offerMatchesRegion, publishedRegionCodes } from "./region-matching.ts";
 import { isRunpodCatalogOffer } from "./runpod-catalog.ts";
+import { isVastCatalogOffer } from "./vast-catalog.ts";
 import { isFormalComparisonOffer } from "./comparison-scope.ts";
 
 export type Availability = "available" | "limited" | "unavailable" | "unknown";
 export type RentalType = "On-demand" | "Spot" | "Reserved";
-export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda"] as const;
+export const COMPETITOR_PROVIDER_SLUGS = ["nebius", "crusoe", "lambda", "ucloud", "autodl", "runpod", "azure", "digitalocean", "verda", "vast"] as const;
 const competitorProviders = new Set<string>(COMPETITOR_PROVIDER_SLUGS);
 const priorityGpuSlugs = ["nvidia-h100", "nvidia-h200", "nvidia-b200", "nvidia-b300"];
 
@@ -467,10 +468,11 @@ export const gpuMemoryLabel = (gpu: Gpu) => gpu.vramGb === null ? "Memory varies
 
 export function createPricingData(dataset: PricingDataset) {
   // Historical snapshots remain intact. The current board only projects
-  // source-backed offers from the nine explicitly tracked competitors.
+  // source-backed offers from the ten explicitly tracked competitors.
   const sourceOffers = dataset.offers.filter((offer) => competitorProviders.has(offer.providerSlug)
     && offer.dataStatus === "official-page"
-    && (offer.providerSlug !== "runpod" || isRunpodCatalogOffer(offer)));
+    && (offer.providerSlug !== "runpod" || isRunpodCatalogOffer(offer))
+    && (offer.providerSlug !== "vast" || isVastCatalogOffer(offer)));
   const currentOffers = sourceOffers.filter(isFormalComparisonOffer);
   const auditOffers = sourceOffers.filter((offer) => !isFormalComparisonOffer(offer));
   const currentGpuSlugs = new Set(currentOffers.map((offer) => offer.gpuSlug));
@@ -524,7 +526,7 @@ export function createPricingData(dataset: PricingDataset) {
 
   const getGpu = (slug: string) => gpus.find((gpu) => gpu.slug === slug);
   // Flatkey keeps its separate commercial profile and CTA, with no competitor
-  // price records or directory placement in the nine-source comparison.
+  // price records or directory placement in the ten-source comparison.
   const getProvider = (slug: string) => slug === "flatkey"
     ? curatedProviders.find((provider) => provider.slug === "flatkey")
     : providers.find((provider) => provider.slug === slug);
@@ -535,7 +537,8 @@ export function createPricingData(dataset: PricingDataset) {
     ? "The latest attempt to collect this source failed. No older prices are carried into the current comparison." : slug === "nebius" && offerDatasetSources.some((source) =>
     source.provider === slug && Array.isArray(source.sourceExclusions) && source.sourceExclusions.some((entry) =>
       entry?.selection === "nebius_account" && entry.reason === "billing_setup_required" && entry.status === "excluded_by_configuration"))
-    ? "Public sources only. The signed-in account calculator is excluded until the provider’s billing setup is completed." : "";
+    ? "Public sources only. The signed-in account calculator is excluded until the provider’s billing setup is completed."
+    : slug === "vast" ? "A bounded search of concrete offers, not the complete marketplace. Country-only locations stay in the audit; additional bandwidth and unspecified taxes are excluded." : "";
   const getRegion = (slug: string) => regions.find((region) => region.slug === slug);
   const getOffersForRegion = (slug: string) => {
     const region = getRegion(slug);

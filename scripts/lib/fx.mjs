@@ -5,7 +5,7 @@ const SOURCE_NAME = "European Central Bank reference rates";
 const MAX_AGE_DAYS = 7;
 
 function decimal(value) {
-  if (typeof value !== "string" || value.length > 128 || !/^\d+(?:\.\d{1,24})?$/.test(value)) throw new Error("Invalid exact decimal for USD conversion");
+  if (typeof value !== "string" || value.length > 192 || !/^\d+(?:\.\d{1,160})?$/.test(value)) throw new Error("Invalid exact decimal for USD conversion");
   const [whole, fraction = ""] = value.split(".");
   return { integer: BigInt(whole + fraction), scale: fraction.length };
 }
@@ -80,11 +80,12 @@ export async function collectFxRates({ fetchImpl = fetch, now = new Date() } = {
   throw new Error(`USD conversion requires verified ECB rates; existing dataset was preserved. ${lastError?.message ?? "Request failed"}`);
 }
 
-export function convertAmountToUsd(sourceAmount, currency, rates) {
+export function convertAmountToUsd(sourceAmount, currency, rates, places = 12) {
+  if (!Number.isInteger(places) || places < 1 || places > 18) throw new Error("Invalid USD decimal precision");
   const sourceRate = rates?.ratesPerEur?.[currency];
   if (!sourceRate || !rates.ratesPerEur.USD) throw new Error(`ECB rate missing for ${currency}; no USD value was invented`);
   decimal(sourceAmount);
-  const converted = currency === "USD" ? sourceAmount : multiplyRatio(sourceAmount, rates.ratesPerEur.USD, sourceRate);
+  const converted = currency === "USD" ? sourceAmount : multiplyRatio(sourceAmount, rates.ratesPerEur.USD, sourceRate, places);
   const amount = Number(converted);
   if (!Number.isFinite(amount) || amount < 0) throw new Error("Converted USD amount is invalid");
   return { amount, decimal: converted };

@@ -1,10 +1,12 @@
 import type { Offer, PricingDataset } from "./data";
 import { sharedCatalogLocations } from "./catalog-applicability.ts";
 import { isRunpodCatalogOffer } from "./runpod-catalog.ts";
+import { isVastCatalogOffer } from "./vast-catalog.ts";
 
 const FIVE_PROVIDERS = ["nebius", "crusoe", "lambda", "ucloud", "autodl"];
-const CURRENT_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "azure", "digitalocean", "verda"];
-const EXTENSION_PROVIDERS = ["azure", "digitalocean", "verda"];
+const NINE_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "azure", "digitalocean", "verda"];
+const CURRENT_PROVIDERS = [...NINE_PROVIDERS, "vast"];
+const EXTENSION_PROVIDERS = ["azure", "digitalocean", "verda", "vast"];
 const LEGACY_PROVIDERS = [...FIVE_PROVIDERS, "runpod", "digitalocean", "verda", "ebcloud", "azure", "suanli", "hyperstack"];
 const ECB_PAGE = "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html";
 const ECB_XML = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
@@ -50,7 +52,7 @@ function amount(value: unknown, label: string): number {
   return value;
 }
 function decimal(value: unknown, label: string): string {
-  check(typeof value === "string" && value.length <= 128 && /^\d+(?:\.\d{1,24})?$/.test(value), label);
+  check(typeof value === "string" && value.length <= 192 && /^\d+(?:\.\d{1,160})?$/.test(value), label);
   check(Number.isFinite(Number(value)), label);
   return value;
 }
@@ -89,15 +91,16 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     && typeof collector.version === "string" && /^\d+\.\d+\.\d+$/.test(collector.version)
     && typeof collector.commit === "string" && /^[a-f0-9]{40}$/.test(collector.commit), "public collector identity");
   // Pre-0.23 snapshots remain readable at their original observation time.
-  // New collections must declare all nine sources, including RunPod.
+  // New collections declare ten sources; immutable older five/nine-source snapshots remain readable.
   const scoped = collector.providers !== undefined;
   const versionParts = String(collector.version).split(".").map(Number);
-  const currentRelease = versionParts[0] > 0 || versionParts[1] >= 23;
+  const currentRelease = versionParts[0] > 0 || versionParts[1] >= 24;
+  const nineRelease = versionParts[0] > 0 || versionParts[1] >= 23;
   check(scoped || !currentRelease, "declared collector scope");
   const declared = scoped ? list(collector.providers, "collector providers") : [];
-  const tracked = declared.includes("runpod") ? CURRENT_PROVIDERS : FIVE_PROVIDERS;
+  const tracked = declared.includes("vast") ? CURRENT_PROVIDERS : declared.includes("runpod") ? NINE_PROVIDERS : FIVE_PROVIDERS;
   if (scoped) {
-    check((!currentRelease || tracked === CURRENT_PROVIDERS)
+    check((!currentRelease || tracked === CURRENT_PROVIDERS) && (!nineRelease || tracked !== FIVE_PROVIDERS)
       && declared.length === tracked.length && new Set(declared).size === tracked.length
       && tracked.every((provider) => declared.includes(provider)), "tracked-provider collector scope");
   }
@@ -162,6 +165,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
     check(gpuSlugs.has(slug(offer.gpuSlug)) && providerSlugs.has(slug(offer.providerSlug)), "unknown offer catalog reference");
     const provider = offer.providerSlug as string;
     if (scoped && provider === "runpod") check(isRunpodCatalogOffer(offer as unknown as Offer), "RunPod catalog source/scope");
+    if (scoped && provider === "vast") check(isVastCatalogOffer(offer as unknown as Offer), "Vast catalog source/scope");
     check(["official-page", "seed"].includes(String(offer.dataStatus)), "offer provenance status");
     if (scoped) check(offer.dataStatus === "official-page", "current source-backed offer provenance");
     if (offer.dataStatus === "official-page") {
@@ -187,7 +191,7 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
       check(countries.every((country) => typeof country === "string" && /^[A-Z]{2}$/.test(country)), "compute country code");
     }
     if (offer.priceScope !== undefined && offer.priceScope !== null) {
-      check(["unlocated_catalog", "platform_coverage", "regional_quote", "zone_quote", "requested_region_quote", "requested_zone_quote"].includes(String(offer.priceScope)), "price location scope");
+      check(["unlocated_catalog", "platform_coverage", "regional_quote", "country_quote", "zone_quote", "requested_region_quote", "requested_zone_quote"].includes(String(offer.priceScope)), "price location scope");
       if (["unlocated_catalog", "platform_coverage"].includes(String(offer.priceScope))) {
         check(offer.countryCode === "" && list(offer.computeCountries, "unlocated compute countries").length === 0,
           "catalog coverage is not a country price");
@@ -276,8 +280,9 @@ export function validatePricingDataset(value: unknown, nowMs = Date.now()): Pric
           time(item.observed_at, ceiling, "source observation time"); url(item.source_url, "observation source URL");
           const limits = list(item.limitations, "source limitations");
           if (item.status === "partial") {
-            check(["nebius_account", "autodl"].includes(String(item.selection)) && limits.length > 0, "partial source scope");
+            check(["nebius_account", "autodl", "vast"].includes(String(item.selection)) && limits.length > 0, "partial source scope");
             const allowed = item.selection === "autodl" ? ["market_region_country:country_not_verified"]
+              : item.selection === "vast" ? ["bounded_marketplace_search:complete_marketplace_not_verified"]
               : ["documented_public_region:no_accessible_project", "other_accounts_and_contracts:outside_authorized_account_scope", "regional_compute_tariff:compute_tariff_unavailable"];
             for (const entry of limits) {
               const limit = row(entry, "source limitation");
